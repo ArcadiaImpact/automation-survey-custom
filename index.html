@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Measuring Automation in AI Safety Research — Arcadia Impact</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Cabin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAFAF9;        /* site body off-white */
+  --ink:#24332C;       /* emerald, text + buttons */
+  --mid:#566059;       /* neutral grey-green for hints */
+  --line:#E2E4E1;      /* hairline borders */
+  --soft:#ECEEEC;      /* mist */
+  --card:#FFFFFF;
+  --warn:#F7E198;      /* highlight yellow, sparingly */
+  --ok:#425F48;        /* forest, small accents only */
+  --danger:#8C3B21;
+  box-sizing:border-box;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:'Cabin',-apple-system,'Segoe UI',sans-serif;
+  font-size:16.5px; line-height:1.55;
+}
+h1,h2,h3{font-family:'Source Serif 4',Georgia,serif; line-height:1.18; margin:0 0 .35em}
+h1{font-size:2.1rem; font-weight:600; letter-spacing:-.01em}
+h2{font-size:1.45rem; font-weight:600}
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  background:#24332C; color:#FAFAF9;
+  padding:calc(.85rem + env(safe-area-inset-top,0px)) 1.4rem .85rem;
+}
+.topbar .mark{font-family:'Source Serif 4',Georgia,serif; font-size:1.15rem; font-weight:600; letter-spacing:.01em}
+.topbar .mock{font-size:.75rem; border:1px solid rgba(250,250,249,.45); border-radius:999px; padding:.15rem .65rem; white-space:nowrap}
+.wrap{max-width:780px; margin:0 auto; padding:2.4rem 1.2rem 4rem}
+.lede{font-size:1.05rem; max-width:62ch}
+.lede p{margin:.6em 0}
+/* progress */
+.progress{display:flex; align-items:center; gap:.8rem; margin:0 0 1.8rem}
+.ptrack{flex:1; height:4px; background:var(--soft); border-radius:3px; overflow:hidden}
+.pfill{height:100%; width:0%; background:var(--ink); transition:width .25s ease}
+.pstep{font-size:.85rem; color:var(--mid); white-space:nowrap}
+@media (prefers-reduced-motion: reduce){ .pfill{transition:none} }
+/* fields */
+.step{display:none}
+.step.active{display:block}
+fieldset{border:0; padding:0; margin:0 0 1.6rem}
+label.q, legend.q{display:block; font-weight:600; margin-bottom:.4rem}
+.req::after{content:" *"; color:var(--ok); font-weight:700}
+.hint{font-size:.9rem; color:var(--mid); margin:-.2rem 0 .55rem; max-width:62ch}
+input[type=text],input[type=email],input[type=number],textarea{
+  width:100%; max-width:34rem; padding:.55rem .7rem;
+  font:inherit; color:var(--ink); background:var(--card);
+  border:1px solid var(--line); border-radius:8px;
+}
+textarea{max-width:100%; min-height:6.2rem; resize:vertical}
+input:focus-visible,textarea:focus-visible,button:focus-visible,.choice:focus-within{
+  outline:2px solid var(--ok); outline-offset:2px;
+}
+.choices{display:flex; flex-wrap:wrap; gap:.5rem}
+.choice{
+  display:flex; align-items:center; gap:.45rem;
+  border:1px solid var(--line); background:var(--soft);
+  border-radius:999px; padding:.42rem .9rem; cursor:pointer; font-size:.92rem;
+}
+.choice:hover{border-color:#C9CDC9}
+.choice input{accent-color:var(--ink); margin:0}
+.choice:has(input:checked){background:var(--ink); border-color:var(--ink); color:#FAFAF9}
+.otherline{display:flex; gap:.5rem; align-items:center; margin-top:.55rem}
+.otherline input[type=text]{max-width:16rem}
+/* tables */
+.tablecard{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:0; overflow-x:auto; margin:.4rem 0 1rem; box-shadow:0 1px 3px rgba(36,51,44,.06)}
+table{border-collapse:collapse; width:100%; min-width:560px}
+th,td{padding:.6rem .7rem; text-align:left; border-bottom:1px solid var(--soft); font-size:.95rem}
+thead th{background:var(--soft); font-weight:600; position:sticky; top:0}
+thead th:not(:first-child){text-align:center; width:7.4rem; min-width:6.4rem; line-height:1.3; vertical-align:middle}
+tbody td:not(.taskname){text-align:center}
+tbody tr:last-child td{border-bottom:0}
+td.taskname{font-weight:500; max-width:17rem}
+td.taskname small{display:block; font-weight:400; color:var(--mid); font-size:.8rem; line-height:1.3}
+.cell{width:5.4rem; padding:.4rem .5rem; text-align:center; font:inherit; color:var(--ink);
+  background:var(--bg); border:1px solid #D8DBD8; border-radius:6px}
+.cell:disabled{background:var(--soft); color:transparent}
+input.cell::-webkit-outer-spin-button, input.cell::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+input.cell{-moz-appearance:textfield; appearance:textfield}
+/* sum bar */
+.sumbar{
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  border:1px solid var(--line); border-radius:12px; padding:.7rem 1rem; margin:.2rem 0 1.2rem;
+  background:var(--card); box-shadow:0 1px 3px rgba(36,51,44,.06);
+}
+.sumbar .label{font-weight:600}
+.sumbar .tag{display:inline-block; margin-top:.15rem; background:var(--warn); color:#24332C;
+  border-radius:999px; padding:.08rem .6rem; font-size:.8rem; font-weight:500}
+.sumbar.ok .tag{background:transparent; border:1px solid var(--ok); color:var(--ok)}
+.sumbar .big{font-family:'Source Serif 4',Georgia,serif; font-size:1.6rem; font-weight:700}
+/* nav */
+.nav{display:flex; justify-content:space-between; gap:1rem; margin-top:2rem}
+button{
+  font:inherit; font-weight:600; cursor:pointer; border-radius:10px;
+  padding:.68rem 1.3rem; font-size:.82rem; letter-spacing:.05em; text-transform:uppercase;
+}
+.next{background:var(--ink); color:#FAFAF9; border:1px solid var(--ink)}
+.next::before{content:"⇢  "}
+.next:disabled{opacity:.4; cursor:not-allowed}
+.back{background:var(--card); color:var(--ink); border:1px solid #C9CDC9}
+.back[hidden]{visibility:hidden; display:block}
+.error{color:var(--danger); font-size:.9rem; min-height:1.2rem; margin-top:.8rem}
+/* review modal */
+dialog{
+  border:1px solid var(--line); border-radius:14px; background:var(--card); color:var(--ink);
+  max-width:40rem; width:92%; padding:1.4rem 1.5rem;
+}
+dialog::backdrop{background:rgba(36,51,44,.5)}
+pre{background:var(--soft); border-radius:8px; padding:.9rem; overflow:auto; font-size:.78rem; max-height:40vh}
+.badge{display:inline-block; background:var(--warn); color:#24332C; border-radius:6px; padding:.1rem .5rem; font-size:.8rem; font-weight:600}
+footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="mark" id="brand"></span>
+  <span class="mock" id="mockBadge" hidden></span>
+</header>
+<div class="wrap">
+  <div class="progress" id="progress" hidden>
+    <div class="ptrack"><div class="pfill" id="pfill"></div></div>
+    <span class="pstep" id="pstep"></span>
+  </div>
+
+  <section class="step active" data-step="0">
+    <h1 id="introTitle"></h1>
+    <div class="lede" id="introParas"></div>
+    <div class="nav">
+      <button class="back" hidden>Back</button>
+      <button class="next" id="startBtn" onclick="go(1)"></button>
+    </div>
+  </section>
+
+  <section class="step" data-step="1">
+    <h2 id="aboutTitle"></h2>
+    <div id="aboutPre"></div>
+    <fieldset>
+      <label class="q" for="email" id="emailLabel"></label>
+      <p class="hint" id="emailHint"></p>
+      <input type="email" id="email" autocomplete="email">
+    </fieldset>
+    <fieldset>
+      <label class="q req" for="role" id="roleLabel"></label>
+      <input type="text" id="role" required>
+    </fieldset>
+    <fieldset>
+      <legend class="q req" id="expLabel"></legend>
+      <div class="choices" id="exp"></div>
+    </fieldset>
+    <fieldset>
+      <legend class="q req" id="orgLabel"></legend>
+      <div class="choices" id="org"></div>
+      <div class="otherline" id="orgOtherLine" hidden>
+        <input type="text" id="orgOther" aria-label="Other org type">
+      </div>
+    </fieldset>
+    <fieldset>
+      <label class="q req" for="usage" id="usageLabel"></label>
+      <p class="hint" id="usageHint"></p>
+      <textarea id="usage" required></textarea>
+    </fieldset>
+    <p class="error" id="err1"></p>
+    <div class="nav">
+      <button class="back" data-nav="back" onclick="go(0)"></button>
+      <button class="next" data-nav="next" onclick="validate1()"></button>
+    </div>
+  </section>
+
+  <section class="step" data-step="2">
+    <h2 id="pointsTitle"></h2>
+    <div id="pointsPre"></div>
+    <div class="tablecard">
+      <table aria-label="Distribute 100 points across task categories">
+        <thead><tr><th id="ptsColTask"></th><th style="width:7rem" id="ptsColPoints"></th></tr></thead>
+        <tbody id="ptsBody"></tbody>
+      </table>
+    </div>
+    <div class="sumbar" id="sumbar" role="status">
+      <span><span class="label" id="totalLabel"></span><br><span class="tag" id="sumhint"></span></span>
+      <span class="big" id="sumval">0</span>
+    </div>
+    <div class="nav">
+      <button class="back" data-nav="back" onclick="go(1)"></button>
+      <button class="next" data-nav="next" id="next2" onclick="go(3)" disabled></button>
+    </div>
+  </section>
+
+  <section class="step" data-step="3">
+    <h2 id="hoursTitle"></h2>
+    <div id="hoursPre"></div>
+    <div class="tablecard">
+      <table aria-label="Active human hours per task and era">
+        <thead><tr id="hoursHead"></tr></thead>
+        <tbody id="hrsBody"></tbody>
+      </table>
+    </div>
+    <fieldset>
+      <label class="q" for="hoursNotes" id="hoursNotesLabel"></label>
+      <p class="hint" id="hoursNotesHint"></p>
+      <textarea id="hoursNotes"></textarea>
+    </fieldset>
+    <p class="error" id="err3"></p>
+    <div class="nav">
+      <button class="back" data-nav="back" onclick="go(2)"></button>
+      <button class="next" data-nav="next" onclick="validate3()"></button>
+    </div>
+  </section>
+
+  <section class="step" data-step="4">
+    <h2 id="barriersTitle"></h2>
+    <div id="barriersPre"></div>
+    <fieldset>
+      <label class="q req" for="highvalue" id="highvalueLabel"></label>
+      <textarea id="highvalue" required></textarea>
+    </fieldset>
+    <fieldset>
+      <label class="q req" for="reason" id="reasonLabel"></label>
+      <p class="hint" id="reasonHint"></p>
+      <textarea id="reason" required></textarea>
+    </fieldset>
+    <fieldset>
+      <label class="q req" for="hardais" id="hardaisLabel"></label>
+      <textarea id="hardais" required></textarea>
+    </fieldset>
+    <fieldset>
+      <legend class="q req" id="fracLabel"></legend>
+      <div class="choices" id="frac"></div>
+      <div class="otherline"><input type="text" id="fracNote" aria-label="Comment on fraction"></div>
+    </fieldset>
+    <fieldset>
+      <label class="q req" for="tracking" id="trackingLabel"></label>
+      <textarea id="tracking" required></textarea>
+    </fieldset>
+    <p class="error" id="err4"></p>
+    <div class="nav">
+      <button class="back" data-nav="back" onclick="go(3)"></button>
+      <button class="next" data-nav="next" onclick="validate4()"></button>
+    </div>
+  </section>
+
+  <section class="step" data-step="5">
+    <h2 id="optionalTitle"></h2>
+    <div id="optionalPre"></div>
+    <div id="optionalQs"></div>
+    <div class="nav">
+      <button class="back" data-nav="back" onclick="go(4)"></button>
+      <button class="next" id="submitBtn" onclick="review()"></button>
+    </div>
+  </section>
+
+  <footer id="footerText"></footer>
+</div>
+
+<dialog id="reviewDlg">
+  <h2><span id="dlgTitle"></span> <span class="badge" id="dlgTag"></span></h2>
+  <p id="dlgBody"></p>
+  <pre id="payload"></pre>
+  <div class="nav" style="margin-top:1rem">
+    <button class="back" id="dlgClose" onclick="document.getElementById('reviewDlg').close()"></button>
+  </div>
+</dialog>
+
+<script src="content.js"></script>
+<script>
+const C = window.CONTENT;
+const ERAS = ["noai","yr1","now","mo6"];
+let step = 0;
+const STEPS = 6;
+const $ = id => document.getElementById(id);
+const setText = (id, t) => { $(id).textContent = t; };
+
+// ---------- hydrate static text ----------
+document.title = C.pageTitle;
+setText("brand", C.brand);
+if (C.mock.enabled) { $("mockBadge").hidden = false; setText("mockBadge", C.mock.badge); }
+setText("introTitle", C.intro.title);
+C.intro.paragraphs.forEach(t => { const p = document.createElement("p"); p.innerHTML = t; $("introParas").appendChild(p); });
+setText("startBtn", C.intro.startLabel);
+setText("footerText", C.footer);
+document.querySelectorAll('[data-nav="back"]').forEach(b => b.textContent = C.nav.back);
+document.querySelectorAll('[data-nav="next"]').forEach(b => b.textContent = C.nav.next);
+setText("submitBtn", C.nav.submit);
+setText("dlgTitle", C.mock.dialogTitle); setText("dlgTag", C.mock.dialogTag);
+setText("dlgBody", C.mock.dialogBody); setText("dlgClose", C.mock.closeLabel);
+
+function preamble(containerId, paras){
+  paras.forEach(t => { const p = document.createElement("p"); p.className = "hint"; p.innerHTML = t; $(containerId).appendChild(p); });
+}
+function radios(containerId, name, options, extra){
+  (options.concat(extra ? ["__other"] : [])).forEach(v => {
+    const lab = document.createElement("label"); lab.className = "choice";
+    const text = (v === "__other") ? C.about.org.otherLabel : v;
+    lab.innerHTML = `<input type="radio" name="${name}" value="${v.replace(/"/g,"&quot;")}">${text}`;
+    $(containerId).appendChild(lab);
+  });
+}
+
+// about
+setText("aboutTitle", C.about.title); preamble("aboutPre", C.about.preamble);
+setText("emailLabel", C.about.email.label); setText("emailHint", C.about.email.hint);
+setText("roleLabel", C.about.role.label);
+setText("expLabel", C.about.experience.label); radios("exp", "exp", C.about.experience.options, false);
+setText("orgLabel", C.about.org.label); radios("org", "org", C.about.org.options, true);
+$("orgOther").placeholder = C.about.org.otherPlaceholder;
+setText("usageLabel", C.about.usage.label); setText("usageHint", C.about.usage.hint);
+
+// points
+setText("pointsTitle", C.points.title); preamble("pointsPre", C.points.preamble);
+setText("ptsColTask", C.points.colTask); setText("ptsColPoints", C.points.colPoints);
+setText("totalLabel", C.points.totalLabel); setText("sumhint", C.points.needHint);
+C.tasks.forEach((t,i)=>{
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td class="taskname">${t.name}<small>${t.detail}</small></td>
+    <td><input class="cell" type="number" min="0" max="100" step="1" inputmode="numeric" id="pts${i}" aria-label="Points for ${t.name}" oninput="sum()"></td>`;
+  $("ptsBody").appendChild(tr);
+});
+
+// hours
+setText("hoursTitle", C.hours.title); preamble("hoursPre", C.hours.preamble);
+$("hoursHead").innerHTML = `<th>${C.hours.colTask}</th>` + C.hours.eraHeaders.map(h=>`<th>${h}</th>`).join("");
+C.tasks.forEach((t,i)=>{
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td class="taskname">${t.name}</td>` + ERAS.map(e=>`<td><input class="cell" type="number" min="0" step="0.5" inputmode="decimal" id="${e}${i}" aria-label="${t.name}, hours" placeholder="${C.hours.cellPlaceholder}" required></td>`).join("");
+  $("hrsBody").appendChild(tr);
+});
+setText("hoursNotesLabel", C.hours.notes.label); setText("hoursNotesHint", C.hours.notes.hint);
+
+// barriers
+setText("barriersTitle", C.barriers.title); preamble("barriersPre", C.barriers.preamble);
+setText("highvalueLabel", C.barriers.highvalue.label);
+setText("reasonLabel", C.barriers.reason.label); setText("reasonHint", C.barriers.reason.hint);
+setText("hardaisLabel", C.barriers.hardais.label);
+setText("fracLabel", C.barriers.fraction.label); radios("frac", "frac", C.barriers.fraction.options, false);
+$("fracNote").placeholder = C.barriers.fraction.commentPlaceholder;
+setText("trackingLabel", C.barriers.tracking.label);
+
+// optional (rendered from the array — add/remove questions in content.js)
+setText("optionalTitle", C.optional.title); preamble("optionalPre", C.optional.preamble);
+C.optional.questions.forEach(q=>{
+  const fs = document.createElement("fieldset");
+  fs.innerHTML = `<label class="q" for="optq_${q.key}">${q.label}</label><textarea id="optq_${q.key}"></textarea>`;
+  $("optionalQs").appendChild(fs);
+});
+
+// ---------- behaviour ----------
+function sum(){
+  let s = 0;
+  C.tasks.forEach((_,i)=>{ s += Number($("pts"+i).value || 0); });
+  setText("sumval", s);
+  const ok = (s === 100);
+  $("sumbar").classList.toggle("ok", ok);
+  setText("sumhint", ok ? C.points.okHint : (s>100 ? (s-100)+C.points.overSuffix : (100-s)+C.points.toGoSuffix));
+  $("next2").disabled = !ok;
+}
+
+function go(n){
+  step = n;
+  document.querySelectorAll(".step").forEach(s=>s.classList.toggle("active", Number(s.dataset.step)===n));
+  $("progress").hidden = (n===0);
+  $("pfill").style.width = (n/(STEPS-1)*100)+"%";
+  setText("pstep", "Step "+n+" of "+(STEPS-1));
+  window.scrollTo({top:0});
+}
+
+function validate1(){
+  const L = C.validation.aboutLabels, missing = [];
+  if(!$("role").value.trim()) missing.push(L.role);
+  if(!document.querySelector('input[name="exp"]:checked')) missing.push(L.experience);
+  const org = document.querySelector('input[name="org"]:checked');
+  if(!org || (org.value==="__other" && !$("orgOther").value.trim())) missing.push(L.org);
+  if(!$("usage").value.trim()) missing.push(L.usage);
+  if(missing.length){ setText("err1", C.validation.stillNeeded + missing.join(", ") + "."); return; }
+  setText("err1",""); go(2);
+}
+
+function validate3(){
+  const missing = [];
+  C.tasks.forEach((t,i)=>{
+    if(ERAS.some(e=>$(e+i).value.trim()==="")) missing.push(t.name);
+  });
+  if(missing.length){ setText("err3", C.hours.errIncomplete + missing.join(", ") + "."); return; }
+  setText("err3",""); go(4);
+}
+
+function validate4(){
+  const L = C.validation.barrierLabels;
+  const missing = ["highvalue","reason","hardais","tracking"].filter(id=>!$(id).value.trim()).map(id=>L[id]);
+  if(!document.querySelector('input[name="frac"]:checked')) missing.push(L.fraction);
+  if(missing.length){ setText("err4", C.validation.stillNeeded + missing.join(", ") + "."); return; }
+  setText("err4",""); go(5);
+}
+
+$("org").addEventListener("change", ()=>{
+  const other = document.querySelector('input[name="org"]:checked')?.value==="__other";
+  $("orgOtherLine").hidden = !other;
+});
+
+function buildPayload(){
+  const val = id => $(id).value.trim();
+  const radio = n => document.querySelector(`input[name="${n}"]:checked`)?.value || null;
+  const org = radio("org")==="__other" ? val("orgOther") : radio("org");
+  const points = {}, hours = {};
+  C.tasks.forEach((t,i)=>{
+    points[t.name] = Number($("pts"+i).value||0);
+    hours[t.name] = { without_ai: Number(val("noai"+i)), one_year_ago: Number(val("yr1"+i)),
+                      now: Number(val("now"+i)), in_6_months: Number(val("mo6"+i)) };
+  });
+  const optional = {};
+  C.optional.questions.forEach(q=>{ optional[q.key] = val("optq_"+q.key)||null; });
+  return {
+    email: val("email")||null, role: val("role"), experience: radio("exp"), org_type: org,
+    ai_usage: val("usage"), points, hours_active_human: hours, hours_notes: val("hoursNotes")||null,
+    highest_value_to_automate: val("highvalue"), main_reason: val("reason"),
+    hard_to_automate_in_ais: val("hardais"), fraction_not_exist: radio("frac"),
+    fraction_comment: val("fracNote")||null, agent_tracking: val("tracking"),
+    optional
+  };
+}
+
+function review(){
+  setText("payload", JSON.stringify(buildPayload(), null, 2));
+  $("reviewDlg").showModal();
+}
+sum();
+</script>
+</body>
+</html>
