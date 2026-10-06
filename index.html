@@ -111,6 +111,7 @@ button{
 .next:disabled{opacity:.4; cursor:not-allowed}
 .back{background:var(--card); color:var(--ink); border:1px solid #C9CDC9}
 .back[hidden]{visibility:hidden; display:block}
+.progress[hidden],.otherline[hidden]{display:none}
 .error{color:var(--danger); font-size:.9rem; min-height:1.2rem; margin-top:.8rem}
 /* review modal */
 dialog{
@@ -120,6 +121,7 @@ dialog{
 dialog::backdrop{background:rgba(36,51,44,.5)}
 pre{background:var(--soft); border-radius:8px; padding:.9rem; overflow:auto; font-size:.78rem; max-height:40vh}
 .badge{display:inline-block; background:var(--warn); color:#24332C; border-radius:6px; padding:.1rem .5rem; font-size:.8rem; font-weight:600}
+.notice{background:var(--soft); border-left:3px solid var(--ok); border-radius:6px; padding:.6rem .9rem; font-size:.92rem; margin:0 0 1.4rem}
 footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
 </style>
 </head>
@@ -135,6 +137,7 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
   </div>
 
   <section class="step active" data-step="0">
+    <p class="notice" id="draftNotice" hidden></p>
     <h1 id="introTitle"></h1>
     <div class="lede" id="introParas"></div>
     <div class="nav">
@@ -149,11 +152,11 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
     <fieldset>
       <label class="q" for="email" id="emailLabel"></label>
       <p class="hint" id="emailHint"></p>
-      <input type="email" id="email" autocomplete="email">
+      <input type="email" id="email" autocomplete="email" maxlength="200">
     </fieldset>
     <fieldset>
       <label class="q req" for="role" id="roleLabel"></label>
-      <input type="text" id="role" required>
+      <input type="text" id="role" maxlength="300" required>
     </fieldset>
     <fieldset>
       <legend class="q req" id="expLabel"></legend>
@@ -163,13 +166,13 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
       <legend class="q req" id="orgLabel"></legend>
       <div class="choices" id="org"></div>
       <div class="otherline" id="orgOtherLine" hidden>
-        <input type="text" id="orgOther" aria-label="Other org type">
+        <input type="text" id="orgOther" aria-label="Other org type" maxlength="300">
       </div>
     </fieldset>
     <fieldset>
       <label class="q req" for="usage" id="usageLabel"></label>
       <p class="hint" id="usageHint"></p>
-      <textarea id="usage" required></textarea>
+      <textarea id="usage" maxlength="4000" required></textarea>
     </fieldset>
     <p class="error" id="err1"></p>
     <div class="nav">
@@ -209,7 +212,7 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
     <fieldset>
       <label class="q" for="hoursNotes" id="hoursNotesLabel"></label>
       <p class="hint" id="hoursNotesHint"></p>
-      <textarea id="hoursNotes"></textarea>
+      <textarea id="hoursNotes" maxlength="4000"></textarea>
     </fieldset>
     <p class="error" id="err3"></p>
     <div class="nav">
@@ -223,25 +226,25 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
     <div id="barriersPre"></div>
     <fieldset>
       <label class="q req" for="highvalue" id="highvalueLabel"></label>
-      <textarea id="highvalue" required></textarea>
+      <textarea id="highvalue" maxlength="4000" required></textarea>
     </fieldset>
     <fieldset>
       <label class="q req" for="reason" id="reasonLabel"></label>
       <p class="hint" id="reasonHint"></p>
-      <textarea id="reason" required></textarea>
+      <textarea id="reason" maxlength="4000" required></textarea>
     </fieldset>
     <fieldset>
       <label class="q req" for="hardais" id="hardaisLabel"></label>
-      <textarea id="hardais" required></textarea>
+      <textarea id="hardais" maxlength="4000" required></textarea>
     </fieldset>
     <fieldset>
       <legend class="q req" id="fracLabel"></legend>
       <div class="choices" id="frac"></div>
-      <div class="otherline"><input type="text" id="fracNote" aria-label="Comment on fraction"></div>
+      <div class="otherline"><input type="text" id="fracNote" aria-label="Comment on fraction" maxlength="1000"></div>
     </fieldset>
     <fieldset>
       <label class="q req" for="tracking" id="trackingLabel"></label>
-      <textarea id="tracking" required></textarea>
+      <textarea id="tracking" maxlength="4000" required></textarea>
     </fieldset>
     <p class="error" id="err4"></p>
     <div class="nav">
@@ -254,10 +257,16 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
     <h2 id="optionalTitle"></h2>
     <div id="optionalPre"></div>
     <div id="optionalQs"></div>
+    <p class="error" id="err5" role="alert"></p>
     <div class="nav">
       <button class="back" data-nav="back" onclick="go(4)"></button>
-      <button class="next" id="submitBtn" onclick="review()"></button>
+      <button class="next" id="submitBtn" onclick="submitResponse()"></button>
     </div>
+  </section>
+
+  <section class="step" data-step="6">
+    <h1 id="thanksTitle"></h1>
+    <div class="lede"><p id="thanksBody"></p></div>
   </section>
 
   <footer id="footerText"></footer>
@@ -284,7 +293,9 @@ const setText = (id, t) => { $(id).textContent = t; };
 // ---------- hydrate static text ----------
 document.title = C.pageTitle;
 setText("brand", C.brand);
-if (C.mock.enabled) { $("mockBadge").hidden = false; setText("mockBadge", C.mock.badge); }
+const MOCK = !C.submit.endpoint;
+if (MOCK) { $("mockBadge").hidden = false; setText("mockBadge", C.mock.badge); }
+setText("thanksTitle", C.submit.thanksTitle); setText("thanksBody", C.submit.thanksBody);
 setText("introTitle", C.intro.title);
 C.intro.paragraphs.forEach(t => { const p = document.createElement("p"); p.innerHTML = t; $("introParas").appendChild(p); });
 setText("startBtn", C.intro.startLabel);
@@ -350,25 +361,29 @@ setText("trackingLabel", C.barriers.tracking.label);
 setText("optionalTitle", C.optional.title); preamble("optionalPre", C.optional.preamble);
 C.optional.questions.forEach(q=>{
   const fs = document.createElement("fieldset");
-  fs.innerHTML = `<label class="q" for="optq_${q.key}">${q.label}</label><textarea id="optq_${q.key}"></textarea>`;
+  fs.innerHTML = `<label class="q" for="optq_${q.key}">${q.label}</label><textarea id="optq_${q.key}" maxlength="4000"></textarea>`;
   $("optionalQs").appendChild(fs);
 });
 
 // ---------- behaviour ----------
 function sum(){
-  let s = 0;
-  C.tasks.forEach((_,i)=>{ s += Number($("pts"+i).value || 0); });
+  let s = 0, bad = false;
+  C.tasks.forEach((_,i)=>{
+    const el = $("pts"+i), v = Number(el.value || 0);
+    if (el.validity.badInput || !(v >= 0 && v <= 100)) bad = true;
+    s += v;
+  });
   setText("sumval", s);
-  const ok = (s === 100);
+  const ok = (s === 100) && !bad;
   $("sumbar").classList.toggle("ok", ok);
-  setText("sumhint", ok ? C.points.okHint : (s>100 ? (s-100)+C.points.overSuffix : (100-s)+C.points.toGoSuffix));
+  setText("sumhint", bad ? C.points.badCellHint : ok ? C.points.okHint : (s>100 ? (s-100)+C.points.overSuffix : (100-s)+C.points.toGoSuffix));
   $("next2").disabled = !ok;
 }
 
 function go(n){
   step = n;
   document.querySelectorAll(".step").forEach(s=>s.classList.toggle("active", Number(s.dataset.step)===n));
-  $("progress").hidden = (n===0);
+  $("progress").hidden = (n===0 || n>=STEPS);
   $("pfill").style.width = (n/(STEPS-1)*100)+"%";
   setText("pstep", "Step "+n+" of "+(STEPS-1));
   window.scrollTo({top:0});
@@ -386,11 +401,13 @@ function validate1(){
 }
 
 function validate3(){
-  const missing = [];
+  const missing = [], negative = [];
   C.tasks.forEach((t,i)=>{
-    if(ERAS.some(e=>$(e+i).value.trim()==="")) missing.push(t.name);
+    if(ERAS.some(e=>$(e+i).value.trim()==="" || $(e+i).validity.badInput)) missing.push(t.name);
+    else if(ERAS.some(e=>!(Number($(e+i).value) >= 0))) negative.push(t.name);
   });
   if(missing.length){ setText("err3", C.hours.errIncomplete + missing.join(", ") + "."); return; }
+  if(negative.length){ setText("err3", C.submit.errNumbers + negative.join(", ") + "."); return; }
   setText("err3",""); go(4);
 }
 
@@ -413,13 +430,15 @@ function buildPayload(){
   const org = radio("org")==="__other" ? val("orgOther") : radio("org");
   const points = {}, hours = {};
   C.tasks.forEach((t,i)=>{
-    points[t.name] = Number($("pts"+i).value||0);
-    hours[t.name] = { without_ai: Number(val("noai"+i)), one_year_ago: Number(val("yr1"+i)),
+    points[t.id] = Number($("pts"+i).value||0);
+    hours[t.id] = { without_ai: Number(val("noai"+i)), one_year_ago: Number(val("yr1"+i)),
                       now: Number(val("now"+i)), in_6_months: Number(val("mo6"+i)) };
   });
   const optional = {};
   C.optional.questions.forEach(q=>{ optional[q.key] = val("optq_"+q.key)||null; });
   return {
+    response_id: draft.response_id, content_version: CONTENT_VERSION,
+    client_submitted_at: new Date().toISOString(),
     email: val("email")||null, role: val("role"), experience: radio("exp"), org_type: org,
     ai_usage: val("usage"), points, hours_active_human: hours, hours_notes: val("hoursNotes")||null,
     highest_value_to_automate: val("highvalue"), main_reason: val("reason"),
@@ -429,9 +448,81 @@ function buildPayload(){
   };
 }
 
+// Mock mode (no endpoint yet): just show the payload.
 function review(){
   setText("payload", JSON.stringify(buildPayload(), null, 2));
   $("reviewDlg").showModal();
+}
+
+// ---------- drafts: answers survive a refresh or a closed tab ----------
+// Stored only in this browser; cleared once the response is saved.
+// response_id also lives in the draft, so a retry after a reload updates
+// the same row in the sheet instead of creating a duplicate.
+function hashText(t){ let h = 2166136261; for (let i=0;i<t.length;i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h>>>0).toString(16).padStart(8,"0"); }
+const CONTENT_VERSION = hashText(JSON.stringify(Object.assign({}, C, { submit: null })));
+const DRAFT_KEY = "automation-survey-draft";
+const newId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
+
+let draft = { response_id: newId(), fields: {}, radios: {} };
+try {
+  const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+  if (saved && saved.response_id) {
+    draft = saved;
+    Object.entries(saved.fields || {}).forEach(([id, v]) => { const el = $(id); if (el) el.value = v; });
+    Object.entries(saved.radios || {}).forEach(([name, v]) => {
+      const el = document.querySelector(`input[name="${name}"][value="${CSS.escape(v)}"]`);
+      if (el) el.checked = true;
+    });
+    if (Object.keys(saved.fields || {}).length || Object.keys(saved.radios || {}).length) {
+      setText("draftNotice", C.submit.draftRestored); $("draftNotice").hidden = false;
+    }
+  }
+} catch (e) { /* storage blocked (private mode etc.): the form still works, just without drafts */ }
+$("orgOtherLine").hidden = document.querySelector('input[name="org"]:checked')?.value !== "__other";
+
+function saveDraft(){
+  draft.fields = {}; draft.radios = {};
+  document.querySelectorAll(".wrap input[id], .wrap textarea[id]").forEach(el => { if (el.value) draft.fields[el.id] = el.value; });
+  document.querySelectorAll(".wrap input[type=radio]:checked").forEach(el => { draft.radios[el.name] = el.value; });
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+}
+document.addEventListener("input", saveDraft);
+document.addEventListener("change", saveDraft);
+
+// ---------- submit ----------
+// Only show "thank you" once the script has confirmed the row was written.
+// On any failure, keep everything on screen and let the person retry.
+let sending = false;
+async function submitResponse(){
+  if (MOCK) { review(); return; }
+  if (sending) return;
+  sending = true;
+  const btn = $("submitBtn");
+  btn.disabled = true; setText("submitBtn", C.submit.sending); setText("err5", "");
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    // text/plain keeps this a "simple" request, so the browser skips the
+    // CORS preflight that Apps Script cannot answer.
+    const res = await fetch(C.submit.endpoint, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(buildPayload()), signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    let out = null;
+    try { out = await res.json(); } catch (e) { /* e.g. a Google login page instead of JSON */ }
+    if (!out) throw new Error("unexpected reply from server (HTTP " + res.status + ", not JSON)");
+    if (!out.ok) throw new Error(out.error || "unknown error");
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    go(6);
+  } catch (err) {
+    const network = err.name === "AbortError" || err instanceof TypeError;
+    setText("err5", network ? C.submit.errNetwork : C.submit.errServer + err.message);
+    setText("submitBtn", C.submit.retry);
+  } finally {
+    sending = false; btn.disabled = false;
+  }
 }
 sum();
 </script>

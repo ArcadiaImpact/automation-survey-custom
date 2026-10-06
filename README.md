@@ -12,7 +12,9 @@ need to touch it.
 - To add a paragraph under any section title, add a string to that section's
   `preamble: []` array. Plain text, or `<strong>…</strong>` for bold.
 - To add/remove optional questions, edit `optional.questions`.
-- The task categories used by both grids are in `tasks`.
+- The task categories used by both grids are in `tasks`. Rename them freely,
+  but never change a task's `id` (or an optional question's `key`) once
+  responses are coming in: those are the column names in the results sheet.
 
 ## Running locally
 
@@ -24,9 +26,11 @@ folder). Or `python3 -m http.server` and visit http://localhost:8000.
 Any static host works. For GitHub Pages: repo Settings → Pages → deploy from
 the `main` branch root.
 
-## Status
+## Saving responses
 
-Submission is currently a mock: the Submit button shows the exact JSON payload
-a submission will contain, and nothing is stored. Backend wiring (Google Form
-endpoint or a database) is the next step; set `mock.enabled` in `content.js`
-to `false` once wired.
+Responses are written to a Google Sheet by a small Apps Script
+([`apps-script/Code.gs`](apps-script/Code.gs)). One-time setup, a pre-launch
+test checklist and analysis tips are in [`SETUP.md`](SETUP.md).
+
+While `submit.endpoint` in `content.js` is empty, the page runs as a mock:
+Submit only shows the JSON payload a submission will contain, and nothing is stored.

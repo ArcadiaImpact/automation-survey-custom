@@ -20,12 +20,14 @@ window.CONTENT = {
   },
 
   // The five task categories used by both grids.
+  // "id" is the column name in the results sheet. Change "name"/"detail" freely,
+  // but NEVER change an id once the survey is live (it would split the data).
   tasks: [
-    { name: "Conceptual / strategy / RRL", detail: "idea generation, strategy work, related-work review" },
-    { name: "Experiment design", detail: "experiment plans, environments, datasets, metrics" },
-    { name: "Building experiment infra", detail: "writing code to implement the plan" },
-    { name: "Running experiments", detail: "launching & orchestrating runs, running evals" },
-    { name: "Writing / communication", detail: "analysing results, docs, papers" }
+    { id: "conceptual", name: "Conceptual / strategy / RRL", detail: "idea generation, strategy work, related-work review" },
+    { id: "design", name: "Experiment design", detail: "experiment plans, environments, datasets, metrics" },
+    { id: "infra", name: "Building experiment infra", detail: "writing code to implement the plan" },
+    { id: "running", name: "Running experiments", detail: "launching & orchestrating runs, running evals" },
+    { id: "writing", name: "Writing / communication", detail: "analysing results, docs, papers" }
   ],
 
   about: {
@@ -51,6 +53,7 @@ window.CONTENT = {
     colPoints: "Points",
     totalLabel: "Total",
     needHint: "needs to be exactly 100",
+    badCellHint: "each value must be between 0 and 100",
     okHint: "perfect — carry on",
     overSuffix: " over",
     toGoSuffix: " to go"
@@ -98,8 +101,21 @@ window.CONTENT = {
     aboutLabels: { role: "role", experience: "experience", org: "org type", usage: "how you use AIs" },
     barrierLabels: { highvalue: "highest-value tasks", reason: "main reason", hardais: "hard to automate", fraction: "fraction question", tracking: "agent tracking" }
   },
+  // Where responses are sent. Paste the Apps Script web app URL here (see SETUP.md).
+  // While this is empty, the page runs as a mock: Submit only shows the payload.
+  submit: {
+    endpoint: "",
+    sending: "Sending…",
+    retry: "Try again",
+    errNetwork: "Your answers were not saved yet — please check your connection and press Try again. Nothing you typed has been lost.",
+    errServer: "Something went wrong saving your answers (nothing you typed has been lost). Please press Try again. If it keeps failing, email us and we'll sort it out. Error: ",
+    errNumbers: "Hours must be 0 or more. Check: ",
+    draftRestored: "We restored the answers you started earlier on this device.",
+    thanksTitle: "Thank you — your response is saved",
+    thanksBody: "We really appreciate the time. If you opted in with your email, we'll be in touch about follow-ups."
+  },
+
   mock: {
-    enabled: true,
     badge: "mock — nothing is saved",
     dialogTitle: "This is a mock",
     dialogTag: "not wired up",
