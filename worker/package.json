@@ -1,0 +1,13 @@
+{
+  "name": "automation-survey-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/validate.test.js && node test/write.test.js && node test/index.test.js",
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.148.0"
+  }
+}
