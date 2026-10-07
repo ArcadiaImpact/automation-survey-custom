@@ -1,23 +1,20 @@
 // ============================================================
-// Automation Survey: response receiver (Google Apps Script).
-// Deployed with clasp from apps-script/ (see SETUP.md), or pasted into
-// Extensions → Apps Script of the results Google Sheet.
+// Automation Survey: Sheet side (Google Apps Script).
+// Deployed with clasp from apps-script/ (see SETUP.md).
 //
-// What it does, per request (draft or final):
-//   1. Parse and strictly validate the JSON the survey page sends. The
-//      schema is fixed: unknown fields are rejected, never turned into
-//      new Sheet columns.
-//   2. Take a script lock so simultaneous requests cannot clash.
-//   3. Compare revisions: a stale or duplicate write is acknowledged with
-//      the current state and changes nothing; a submitted response is
-//      never downgraded by a late draft.
-//   4. Write the current state to the `responses` tab (one row per
-//      response_id) and append the accepted snapshot to `response_events`.
-//   5. Store the untouched JSON in raw_json columns as a lossless backup.
-//   6. Reply {ok:true, accepted_revision, status}. The page shows
-//      "thank you" only after a submitted acknowledgement.
-// Hourly cleanup removes drafts idle for 48 h; a daily job backs up
-// submitted rows to CSV. Both are installed by installMaintenanceTriggers.
+// Since 2026-10-07 the survey page writes to a Cloudflare Worker backed by
+// D1 (see worker/). This script mirrors the Worker's data into the Sheet
+// and runs the maintenance jobs:
+//   - syncFromWorker (every minute): pulls new events from the Worker's
+//     /export endpoint and writes the current row of each response to the
+//     `responses` tab and each event to `response_events`.
+//   - cleanupExpiredDrafts (hourly): removes drafts idle for 48 h from the
+//     Sheet; the Worker applies the same rule to its database.
+//   - backupSubmittedResponses (daily): CSV of submitted rows.
+//
+// doPost still accepts writes directly, with the same validation and
+// revision rules, so the old endpoint keeps working while the survey
+// switches over. It is retired in a later change.
 // ============================================================
 
 const RESPONSES_SHEET = 'responses';
@@ -26,6 +23,8 @@ const MAX_BODY = 200000;      // characters; a real response is ~10–40k at mos
 const CELL_LIMIT = 45000;     // Sheets hard limit is 50,000 characters per cell
 const DRAFT_RETENTION_MS = 48 * 60 * 60 * 1000;
 const BACKUP_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const EXPORT_PAGE_SIZE = 200;   // the Worker's maximum page
+const SYNC_MAX_PAGES = 10;      // per trigger run; the next run continues
 const FIXED_COLUMNS = ['received_at', 'response_id', 'content_version'];
 const TASK_IDS = [
   'conceptual', 'design', 'infra', 'running', 'writing', 'collaborating'
@@ -655,7 +654,7 @@ function backupSubmittedResponses() {
 }
 
 function installMaintenanceTriggers() {
-  const managed = ['cleanupExpiredDrafts', 'backupSubmittedResponses'];
+  const managed = ['cleanupExpiredDrafts', 'backupSubmittedResponses', 'syncFromWorker'];
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
     if (managed.indexOf(trigger.getHandlerFunction()) !== -1) {
       ScriptApp.deleteTrigger(trigger);
@@ -665,6 +664,105 @@ function installMaintenanceTriggers() {
     .timeBased().everyHours(1).create();
   ScriptApp.newTrigger('backupSubmittedResponses')
     .timeBased().everyDays(1).atHour(3).create();
+  ScriptApp.newTrigger('syncFromWorker')
+    .timeBased().everyMinutes(1).create();
+}
+
+// ---------- mirror of the Worker's database into the Sheet ----------
+
+// Pulls events the Sheet has not seen yet. The Worker has already applied
+// the revision rules and exported rows only ever move forward, so the mirror
+// writes what it receives. A run that fails midway repeats from the saved
+// cursor: rewriting a current row is harmless and events are deduplicated.
+function syncFromWorker() {
+  const props = PropertiesService.getScriptProperties();
+  const url = props.getProperty('WORKER_URL');
+  const secret = props.getProperty('EXPORT_SECRET');
+  if (!url || !secret) {
+    throw new Error('WORKER_URL and EXPORT_SECRET script properties are required');
+  }
+  let after = Number(props.getProperty('SYNC_AFTER_EVENT_ID') || 0);
+  let mirrored = 0;
+  try {
+    for (let page = 0; page < SYNC_MAX_PAGES; page++) {
+      const batch = fetchExportPage_(url, secret, after);
+      if (!batch.events.length) break;
+      withLock_(LockService.getScriptLock(), function () {
+        mirrorBatch_(SpreadsheetApp.getActiveSpreadsheet(), batch);
+        props.setProperty('SYNC_AFTER_EVENT_ID', String(batch.next_after));
+      });
+      after = batch.next_after;
+      mirrored += batch.events.length;
+      if (batch.events.length < EXPORT_PAGE_SIZE) break;
+    }
+    console.log('Mirrored ' + mirrored + ' events; cursor ' + after);
+  } catch (err) {
+    console.error(err);
+    notifyOwner_(err);
+    throw err;
+  }
+}
+
+function fetchExportPage_(url, secret, after) {
+  const response = UrlFetchApp.fetch(
+    url.replace(/\/$/, '') + '/export?after=' + after + '&limit=' + EXPORT_PAGE_SIZE,
+    { headers: { Authorization: 'Bearer ' + secret }, muteHttpExceptions: true }
+  );
+  if (response.getResponseCode() !== 200) {
+    throw new Error('Export request failed with HTTP ' + response.getResponseCode());
+  }
+  const batch = JSON.parse(response.getContentText());
+  if (!batch || !Array.isArray(batch.events) || !Array.isArray(batch.responses)) {
+    throw new Error('Export reply has an unexpected shape');
+  }
+  return batch;
+}
+
+function mirrorBatch_(ss, batch) {
+  const store = createSheetStore_(ss);
+  batch.responses.forEach(function (row) {
+    store.putResponse(mirrorResponseRecord_(row));
+  });
+  batch.events.forEach(function (event) {
+    const key = eventKey_(event.response_id, event.revision);
+    if (!store.hasEvent(key)) store.appendEvent(mirrorEventRecord_(event));
+  });
+}
+
+// Same columns as buildResponseRecord_, but the timestamps come from the
+// Worker's row. Unparseable raw_json is logged and the row still lands with
+// its fixed columns and raw text, so one bad row cannot stall the mirror.
+function mirrorResponseRecord_(row) {
+  const record = {
+    response_id: row.response_id,
+    status: row.status,
+    revision: Number(row.revision),
+    started_at: row.started_at,
+    updated_at: row.updated_at,
+    submitted_at: row.submitted_at || '',
+    last_completed_step: Number(row.last_completed_step),
+    content_version: row.content_version,
+    client_updated_at: row.client_updated_at
+  };
+  try {
+    Object.assign(record, flatten_(JSON.parse(row.raw_json).answers || {}));
+  } catch (err) {
+    console.error('Unparseable raw_json for ' + row.response_id + ': ' + err);
+  }
+  addRawJson_(record, row.raw_json);
+  return record;
+}
+
+function mirrorEventRecord_(event) {
+  const record = {
+    event_key: eventKey_(event.response_id, event.revision),
+    event_at: event.event_at,
+    response_id: event.response_id,
+    revision: Number(event.revision),
+    status: event.status
+  };
+  addRawJson_(record, event.raw_json);
+  return record;
 }
 
 function notifyOwner_(err) {
