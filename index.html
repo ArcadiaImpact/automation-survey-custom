@@ -36,7 +36,8 @@ h2{font-size:1.45rem; font-weight:600}
   background:#24332C; color:#FAFAF9;
   padding:calc(.85rem + env(safe-area-inset-top,0px)) 1.4rem .85rem;
 }
-.topbar .mark{font-family:'Source Serif 4',Georgia,serif; font-size:1.15rem; font-weight:600; letter-spacing:.01em}
+.topbar .mark{font-family:'Source Serif 4',Georgia,serif; font-size:1.15rem; font-weight:600; letter-spacing:.01em; color:inherit; text-decoration:none}
+.topbar .mark:hover,.topbar .mark:focus-visible{text-decoration:underline; text-underline-offset:.2em}
 .topbar .mock{font-size:.75rem; border:1px solid rgba(250,250,249,.45); border-radius:999px; padding:.15rem .65rem; white-space:nowrap}
 .wrap{max-width:780px; margin:0 auto; padding:2.4rem 1.2rem 4rem}
 .lede{font-size:1.05rem; max-width:62ch}
@@ -54,6 +55,7 @@ fieldset{border:0; padding:0; margin:0 0 1.6rem}
 label.q, legend.q{display:block; font-weight:600; margin-bottom:.4rem}
 .req::after{content:" *"; color:var(--ok); font-weight:700}
 .hint{font-size:.9rem; color:var(--mid); margin:-.2rem 0 .55rem; max-width:62ch}
+.hint.contact{margin:1.6rem 0 0}
 .instruction-lead{font-weight:600; margin:1.2rem 0 .35rem}
 .instructions{margin:.35rem 0 1rem; padding-left:1.5rem; max-width:62ch}
 .instructions li{margin:.45rem 0; padding-left:.2rem}
@@ -153,7 +155,7 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
 </head>
 <body>
 <header class="topbar">
-  <span class="mark" id="brand"></span>
+  <a class="mark" id="brand" target="_blank" rel="noopener noreferrer"></a>
   <span class="mock" id="mockBadge" hidden></span>
 </header>
 <div class="wrap">
@@ -275,6 +277,7 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
       <button class="back" data-nav="back" onclick="go(3)"></button>
       <button class="next" id="submitBtn" onclick="validate4()"></button>
     </div>
+    <p class="hint contact" id="contactNote"></p>
   </section>
 
   <section class="step" data-step="5">
@@ -312,10 +315,11 @@ const setText = (id, t) => { $(id).textContent = t; };
 
 // ---------- hydrate static text ----------
 document.title = C.pageTitle;
-setText("brand", C.brand);
+setText("brand", C.brand); $("brand").href = C.brandUrl;
 const MOCK = !C.submit.endpoint;
 if (MOCK) { $("mockBadge").hidden = false; setText("mockBadge", C.mock.badge); }
 setText("thanksTitle", C.submit.thanksTitle); setText("thanksBody", C.submit.thanksBody);
+$("contactNote").innerHTML = C.submit.contact;
 setText("introTitle", C.intro.title);
 C.intro.paragraphs.forEach(t => { const p = document.createElement("p"); p.innerHTML = t; $("introParas").appendChild(p); });
 setText("startBtn", C.intro.startLabel);

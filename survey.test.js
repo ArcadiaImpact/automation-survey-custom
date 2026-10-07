@@ -62,6 +62,9 @@ assert.match(html, /class="info-tip"/);
 assert.match(html, /class="tip-list"/);
 assert.match(html, /<td class="taskname">\$\{t\.name\}<small>\$\{t\.detail\}<\/small><\/td>` \+ ERAS/);
 assert.match(html, /<script src="persistence\.js"><\/script>/);
+assert.equal(C.brandUrl, "https://www.arcadiaimpact.org/alignment", "brand link target lives in content.js");
+assert.match(html, /<a class="mark" id="brand" target="_blank" rel="noopener noreferrer"><\/a>/, "brand header is a link that opens in a new tab");
+assert.match(html, /\$\("brand"\)\.href = C\.brandUrl/, "brand link href comes from content.js");
 assert.match(html, /id="saveStatus"/);
 assert.match(html, /id="website"/);
 assert.match(html, /function buildSnapshot\(status\)/);
@@ -75,5 +78,8 @@ assert.doesNotMatch(C.intro.paragraphs.join(" "), /partial answers are saved/i);
 assert.equal(typeof C.submit.saving, "string");
 assert.equal(typeof C.submit.saved, "string");
 assert.equal(typeof C.submit.savedOffline, "string");
+assert.match(C.submit.contact, /mailto:angel@arcadiaimpact\.org/, "contact line links the email address");
+assert.match(html, /<p class="hint contact" id="contactNote"><\/p>\s*<\/section>/, "contact line sits at the bottom of the final step");
+assert.match(html, /\$\("contactNote"\)\.innerHTML = C\.submit\.contact/);
 
 console.log("Survey content and structure checks passed.");

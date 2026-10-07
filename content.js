@@ -8,6 +8,7 @@
 window.CONTENT = {
   pageTitle: "Measuring Automation in AI Safety Research — Arcadia Impact",
   brand: "Arcadia Impact",
+  brandUrl: "https://www.arcadiaimpact.org/alignment",   // the header name links here, in a new tab
   footer: "Arcadia Impact · Measuring automation in AI safety research",
 
   intro: {
@@ -140,6 +141,7 @@ window.CONTENT = {
     errServer: "Something went wrong saving your answers (nothing you typed has been lost). Please press Try again. If it keeps failing, email us and we'll sort it out. Error: ",
     errNumbers: "Hours must be 0 or more. Check: ",
     draftRestored: "We restored the answers you started earlier on this device.",
+    contact: "If you want to reach out to us about this work, contact <a href='mailto:angel@arcadiaimpact.org'>angel@arcadiaimpact.org</a>.",
     thanksTitle: "Thank you — your response is saved",
     thanksBody: "We really appreciate the time. If you opted in with your email, we'll be in touch about follow-ups."
   },
