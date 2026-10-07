@@ -14,8 +14,8 @@ ALLOWED_ORIGINS = "https://arcadiaimpact.github.io,http://127.0.0.1:8000,http://
 [[d1_databases]]
 binding = "DB"
 database_name = "automation-survey"
-# Replace with the database_id printed by `npx wrangler d1 create automation-survey`.
-database_id = "00000000-0000-0000-0000-000000000000"
+# From `npx wrangler d1 create automation-survey` (region WEUR, 2026-10-07).
+database_id = "9b317a26-1ca3-40f9-a8b8-e7483843f9c0"
 
 [triggers]
 crons = ["17 * * * *"]
