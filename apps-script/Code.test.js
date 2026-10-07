@@ -8,7 +8,8 @@ vm.createContext(sandbox);
 vm.runInContext(
   `${source}
   this.__test = {
-    parseRequest_, validateEnvelope_, validateAnswers_, decideWrite_
+    parseRequest_, validateEnvelope_, validateAnswers_, decideWrite_,
+    buildResponseRecord_, eventKey_, toCell_, processWriteWithStore_
   };`,
   sandbox
 );
@@ -18,6 +19,10 @@ const {
   validateEnvelope_,
   validateAnswers_,
   decideWrite_,
+  buildResponseRecord_,
+  eventKey_,
+  toCell_,
+  processWriteWithStore_,
 } = sandbox.__test;
 
 function validAnswers() {
@@ -146,5 +151,101 @@ assert.equal(
 
 assert.equal(parseRequest_("").code, "empty_body");
 assert.equal(parseRequest_("{").code, "invalid_json");
+
+const submitted = envelope({
+  status: "submitted",
+  answers: validAnswers(),
+});
+const now = new Date("2026-10-07T09:00:00.000Z");
+const record = buildResponseRecord_(
+  submitted,
+  JSON.stringify(submitted),
+  null,
+  now
+);
+
+assert.equal(record.status, "submitted");
+assert.equal(record.revision, 3);
+assert.equal(record["points.conceptual"], 100);
+assert.equal(record["hours_active_human.conceptual.now"], null);
+assert.equal(record.started_at.toISOString(), now.toISOString());
+assert.equal(record.submitted_at.toISOString(), now.toISOString());
+assert.equal(
+  eventKey_(submitted.response_id, 3),
+  "123e4567-e89b-42d3-a456-426614174000:3"
+);
+assert.equal(toCell_("=1+1"), "'=1+1");
+
+const laterDraft = envelope({
+  revision: 6,
+  status: "draft",
+  answers: draftAnswers(),
+});
+assert.equal(
+  decideWrite_({ status: "submitted", revision: 5 }, laterDraft).kind,
+  "stale"
+);
+
+function createFakeStore() {
+  return {
+    responses: [],
+    events: [],
+    failNextEventAppend: false,
+    getResponse(id) {
+      return this.responses.find((item) => item.response_id === id) || null;
+    },
+    putResponse(value) {
+      const index = this.responses.findIndex(
+        (item) => item.response_id === value.response_id
+      );
+      if (index === -1) this.responses.push(value);
+      else this.responses[index] = value;
+    },
+    hasEvent(key) {
+      return this.events.some((item) => item.event_key === key);
+    },
+    appendEvent(value) {
+      if (this.failNextEventAppend) {
+        this.failNextEventAppend = false;
+        throw new Error("simulated event append failure");
+      }
+      this.events.push(value);
+    },
+  };
+}
+
+const store = createFakeStore();
+const incoming = envelope({ revision: 7 });
+const incomingBody = JSON.stringify(incoming);
+
+store.failNextEventAppend = true;
+assert.throws(
+  () => processWriteWithStore_(store, incoming, incomingBody, now),
+  /simulated event append failure/
+);
+assert.equal(store.responses.length, 1);
+assert.equal(store.events.length, 0);
+
+const ack = processWriteWithStore_(store, incoming, incomingBody, now);
+assert.equal(ack.ok, true);
+assert.equal(ack.accepted_revision, 7);
+assert.equal(ack.status, "draft");
+assert.equal(store.responses.length, 1);
+assert.equal(store.events.length, 1);
+assert.equal(store.events[0].raw_json, store.responses[0].raw_json);
+
+const repeated = processWriteWithStore_(store, incoming, incomingBody, now);
+assert.equal(repeated.ok, true);
+assert.equal(store.events.length, 1);
+
+const oldDraft = envelope({ revision: 6 });
+const oldAck = processWriteWithStore_(
+  store,
+  oldDraft,
+  JSON.stringify(oldDraft),
+  now
+);
+assert.equal(oldAck.accepted_revision, 7);
+assert.equal(store.events.length, 1);
 
 console.log("Apps Script contract checks passed.");

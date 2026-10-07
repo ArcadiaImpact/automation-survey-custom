@@ -234,14 +234,18 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(30000); // throws if it can't get the lock; caught below, page shows "try again"
     try {
-      const row = writeResponse_(data, body);
-      return reply_({ ok: true, response_id: data.response_id, row: row });
+      return reply_(processWrite_(data, body, new Date()));
     } finally {
       lock.releaseLock();
     }
   } catch (err) {
     console.error(err);
-    return reply_({ ok: false, error: String(err && err.message || err) });
+    notifyOwner_(err);
+    return reply_({
+      ok: false,
+      code: 'server_error',
+      message: 'The response could not be saved.'
+    });
   }
 }
 
@@ -251,56 +255,209 @@ function doGet() {
   return reply_({ ok: true, message: 'Automation survey endpoint is running.' });
 }
 
-function writeResponse_(data, rawBody) {
-  const sheet = getSheet_();
-
-  const record = {
-    received_at: new Date(),
-    response_id: data.response_id,
-    content_version: data.content_version || ''
-  };
-  const flat = flatten_(data);
-  delete flat.response_id;
-  delete flat.content_version;
-  Object.assign(record, flat);
-
-  // The raw JSON goes in raw_json (and raw_json_2, ... if it is very long).
-  for (let i = 0, n = 1; i < rawBody.length || n === 1; i += CELL_LIMIT, n++) {
-    record[n === 1 ? 'raw_json' : 'raw_json_' + n] = rawBody.slice(i, i + CELL_LIMIT);
-  }
-
-  // Make sure every key has a column; add missing ones at the right edge.
-  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
-  const missing = Object.keys(record).filter(k => headers.indexOf(k) === -1);
-  if (missing.length) {
-    sheet.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
-    headers = headers.concat(missing);
-  }
-
-  const values = headers.map(h => (h in record) ? toCell_(record[h]) : '');
-
-  // Retry of an already-saved response → overwrite that row (latest answers win).
-  const idCol = headers.indexOf('response_id') + 1;
-  const lastRow = sheet.getLastRow();
-  let target = lastRow + 1;
-  if (lastRow >= 2) {
-    const hit = sheet.getRange(2, idCol, lastRow - 1, 1)
-      .createTextFinder(data.response_id).matchEntireCell(true).findNext();
-    if (hit) target = hit.getRow();
-  }
-  sheet.getRange(target, 1, 1, values.length).setValues([values]);
-  return target;
+function analysisColumns_() {
+  const columns = [
+    'response_id', 'status', 'revision', 'started_at', 'updated_at',
+    'submitted_at', 'last_completed_step', 'content_version',
+    'client_updated_at', 'email', 'job_title', 'role_type', 'experience',
+    'ai_usage'
+  ];
+  TASK_IDS.forEach(function (id) {
+    columns.push('points.' + id);
+  });
+  TASK_IDS.forEach(function (id) {
+    ERAS.forEach(function (era) {
+      columns.push('hours_active_human.' + id + '.' + era);
+    });
+  });
+  columns.push(
+    'hours_notes', 'highest_value_to_automate', 'main_reason',
+    'agent_tracking'
+  );
+  return columns.concat(rawJsonColumns_());
 }
 
-function getSheet_() {
+function eventColumns_() {
+  return [
+    'event_key', 'event_at', 'response_id', 'revision', 'status'
+  ].concat(rawJsonColumns_());
+}
+
+function rawJsonColumns_() {
+  const count = Math.ceil(MAX_BODY / CELL_LIMIT);
+  const columns = [];
+  for (let n = 1; n <= count; n++) {
+    columns.push(n === 1 ? 'raw_json' : 'raw_json_' + n);
+  }
+  return columns;
+}
+
+function eventKey_(responseId, revision) {
+  return responseId + ':' + revision;
+}
+
+function addRawJson_(record, rawBody) {
+  const columns = rawJsonColumns_();
+  for (let i = 0; i < columns.length; i++) {
+    record[columns[i]] = rawBody.slice(i * CELL_LIMIT, (i + 1) * CELL_LIMIT);
+  }
+}
+
+function buildResponseRecord_(incoming, rawBody, current, now) {
+  const record = {
+    response_id: incoming.response_id,
+    status: incoming.status,
+    revision: incoming.revision,
+    started_at: current && current.started_at ? current.started_at : now,
+    updated_at: now,
+    submitted_at: incoming.status === 'submitted'
+      ? (current && current.submitted_at ? current.submitted_at : now)
+      : '',
+    last_completed_step: incoming.last_completed_step,
+    content_version: incoming.content_version,
+    client_updated_at: incoming.client_updated_at
+  };
+  Object.assign(record, flatten_(incoming.answers));
+  addRawJson_(record, rawBody);
+  return record;
+}
+
+function buildEventRecord_(response, now) {
+  const event = {
+    event_key: eventKey_(response.response_id, response.revision),
+    event_at: now,
+    response_id: response.response_id,
+    revision: response.revision,
+    status: response.status
+  };
+  rawJsonColumns_().forEach(function (column) {
+    event[column] = response[column] || '';
+  });
+  return event;
+}
+
+function processWriteWithStore_(store, incoming, rawBody, now) {
+  let current = store.getResponse(incoming.response_id);
+  const decision = decideWrite_(current, incoming);
+
+  if (decision.kind === 'accept') {
+    current = buildResponseRecord_(incoming, rawBody, current, now);
+    store.putResponse(current);
+  } else if (!current || current.revision !== incoming.revision) {
+    return acknowledgement_(current);
+  }
+
+  const key = eventKey_(current.response_id, current.revision);
+  if (!store.hasEvent(key)) {
+    store.appendEvent(buildEventRecord_(current, now));
+  }
+  return acknowledgement_(current);
+}
+
+function acknowledgement_(current) {
+  if (!current) {
+    return result_(false, 'missing_response', 'Response was not found.');
+  }
+  return {
+    ok: true,
+    response_id: current.response_id,
+    accepted_revision: Number(current.revision),
+    status: current.status
+  };
+}
+
+function processWrite_(incoming, rawBody, now) {
+  return processWriteWithStore_(createSheetStore_(), incoming, rawBody, now);
+}
+
+function createSheetStore_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(RESPONSES_SHEET);
-  if (!sheet) sheet = ss.insertSheet(RESPONSES_SHEET);
+  const responseHeaders = analysisColumns_();
+  const eventHeaders = eventColumns_();
+  const responseSheet = getFixedSheet_(ss, RESPONSES_SHEET, responseHeaders);
+  const eventSheet = getFixedSheet_(ss, EVENTS_SHEET, eventHeaders);
+
+  return {
+    getResponse: function (id) {
+      const row = findRow_(responseSheet, responseHeaders, 'response_id', id);
+      return row ? readRecord_(responseSheet, responseHeaders, row) : null;
+    },
+    putResponse: function (record) {
+      const existing = findRow_(
+        responseSheet, responseHeaders, 'response_id', record.response_id
+      );
+      const row = existing || responseSheet.getLastRow() + 1;
+      writeRecord_(responseSheet, responseHeaders, row, record);
+    },
+    hasEvent: function (key) {
+      return Boolean(findRow_(eventSheet, eventHeaders, 'event_key', key));
+    },
+    appendEvent: function (record) {
+      writeRecord_(
+        eventSheet, eventHeaders, eventSheet.getLastRow() + 1, record
+      );
+    }
+  };
+}
+
+function getFixedSheet_(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
   if (sheet.getLastColumn() === 0) {
-    sheet.getRange(1, 1, 1, FIXED_COLUMNS.length).setValues([FIXED_COLUMNS]);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  const actual = sheet.getRange(1, 1, 1, sheet.getLastColumn())
+    .getValues()[0].map(String);
+  if (actual.length !== headers.length ||
+      actual.some(function (header, index) { return header !== headers[index]; })) {
+    throw new Error(
+      'Unexpected headers in "' + name + '". Use a clean sheet or restore the expected schema.'
+    );
   }
   return sheet;
+}
+
+function findRow_(sheet, headers, keyColumn, value) {
+  const column = headers.indexOf(keyColumn) + 1;
+  const lastRow = sheet.getLastRow();
+  if (!column || lastRow < 2) return 0;
+  const hit = sheet.getRange(2, column, lastRow - 1, 1)
+    .createTextFinder(String(value)).matchEntireCell(true).findNext();
+  return hit ? hit.getRow() : 0;
+}
+
+function readRecord_(sheet, headers, row) {
+  const values = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+  const record = {};
+  headers.forEach(function (header, index) {
+    record[header] = values[index];
+  });
+  return record;
+}
+
+function writeRecord_(sheet, headers, row, record) {
+  const values = headers.map(function (header) {
+    return Object.prototype.hasOwnProperty.call(record, header)
+      ? toCell_(record[header])
+      : '';
+  });
+  sheet.getRange(row, 1, 1, values.length).setValues([values]);
+}
+
+function notifyOwner_(err) {
+  const email = PropertiesService.getScriptProperties()
+    .getProperty('ALERT_EMAIL');
+  if (!email) return;
+  const cache = CacheService.getScriptCache();
+  if (cache.get('server-failure-alert')) return;
+  cache.put('server-failure-alert', '1', 3600);
+  MailApp.sendEmail(
+    email,
+    'Automation survey save failure',
+    String(err && err.stack || err)
+  );
 }
 
 // {points: {design: 20}} → {"points.design": 20}
