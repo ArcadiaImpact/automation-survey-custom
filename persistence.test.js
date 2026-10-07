@@ -257,6 +257,64 @@ async function run() {
 
   {
     const scheduler = createScheduler();
+    const states = [];
+    const coordinator = createAutosaveCoordinator(
+      coordinatorOptions(
+        async () => ({
+          ok: false,
+          code: "invalid_points",
+          message: "Points must total 100.",
+        }),
+        scheduler,
+        states
+      )
+    );
+
+    coordinator.queue({ ...snapshot, revision: 9 });
+    scheduler.runNext();
+    await settle();
+    assert.deepEqual(states, ["saving", "failed"]);
+    assert.equal(scheduler.size(), 0);
+  }
+
+  {
+    const scheduler = createScheduler();
+    const coordinator = createAutosaveCoordinator(
+      coordinatorOptions(async (value) => ({
+        ok: true,
+        accepted_revision: value.revision,
+        status: "submitted",
+      }), scheduler)
+    );
+
+    coordinator.queue({ ...snapshot, revision: 10 });
+    scheduler.runNext();
+    await settle();
+    coordinator.queue({ ...snapshot, revision: 11 });
+    assert.equal(scheduler.size(), 0);
+  }
+
+  {
+    const scheduler = createScheduler();
+    const coordinator = createAutosaveCoordinator(
+      coordinatorOptions(async () => ({
+        ok: true,
+        accepted_revision: 11,
+        status: "submitted",
+      }), scheduler)
+    );
+
+    const finalPromise = coordinator.submit({
+      ...snapshot,
+      revision: 12,
+      status: "submitted",
+    });
+    scheduler.runNext();
+    await assert.rejects(finalPromise, /revision 12/);
+  }
+
+  {
+    const scheduler = createScheduler();
     const coordinator = createAutosaveCoordinator(
       coordinatorOptions(async () => ({ ok: true }), scheduler)
     );

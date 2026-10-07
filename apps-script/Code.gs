@@ -192,9 +192,13 @@ function validateHours_(hours, isFinal) {
 function decideWrite_(current, incoming) {
   if (!current) return { kind: 'accept' };
   if (current.status === 'submitted') {
-    if (incoming.status === 'submitted' &&
-        incoming.revision === current.revision) {
-      return { kind: 'idempotent' };
+    if (incoming.status === 'submitted') {
+      if (incoming.revision === current.revision) {
+        return { kind: 'idempotent' };
+      }
+      if (incoming.revision > current.revision) {
+        return { kind: 'accept' };
+      }
     }
     return { kind: 'stale' };
   }
@@ -514,10 +518,17 @@ function deleteRowsForIds_(sheet, headers, rows, idSet) {
   return removed;
 }
 
-function cleanupExpiredDrafts() {
-  const lock = LockService.getScriptLock();
+function withLock_(lock, operation) {
   lock.waitLock(30000);
   try {
+    return operation();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cleanupExpiredDrafts() {
+  return withLock_(LockService.getScriptLock(), function () {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const responseHeaders = analysisColumns_();
     const eventHeaders = eventColumns_();
@@ -544,9 +555,7 @@ function cleanupExpiredDrafts() {
       'Expired drafts removed: ' + responsesRemoved +
       '; events removed: ' + eventsRemoved
     );
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 function backupSubmittedResponses() {
@@ -556,11 +565,18 @@ function backupSubmittedResponses() {
     throw new Error('BACKUP_FOLDER_ID script property is not set');
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const headers = analysisColumns_();
-  const sheet = getFixedSheet_(ss, RESPONSES_SHEET, headers);
-  const rows = readDataRows_(sheet, headers.length);
-  const submitted = submittedRows_(headers, rows);
+  const snapshot = withLock_(LockService.getScriptLock(), function () {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const headers = analysisColumns_();
+    const sheet = getFixedSheet_(ss, RESPONSES_SHEET, headers);
+    const rows = readDataRows_(sheet, headers.length);
+    return {
+      headers: headers,
+      submitted: submittedRows_(headers, rows)
+    };
+  });
+  const headers = snapshot.headers;
+  const submitted = snapshot.submitted;
   const folder = DriveApp.getFolderById(folderId);
   const now = new Date();
   const prefix = 'automation-survey-submitted-';

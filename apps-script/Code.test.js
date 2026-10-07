@@ -10,7 +10,7 @@ vm.runInContext(
   this.__test = {
     parseRequest_, validateEnvelope_, validateAnswers_, decideWrite_,
     buildResponseRecord_, eventKey_, toCell_, processWriteWithStore_,
-    expiredDraftIds_, toCsv_, submittedRows_
+    expiredDraftIds_, toCsv_, submittedRows_, withLock_
   };`,
   sandbox
 );
@@ -27,6 +27,7 @@ const {
   expiredDraftIds_,
   toCsv_,
   submittedRows_,
+  withLock_,
 } = sandbox.__test;
 
 function validAnswers() {
@@ -123,6 +124,12 @@ const retry = decideWrite_(
   { status: "submitted", revision: 5 }
 );
 assert.equal(retry.kind, "idempotent");
+
+const correctedFinal = decideWrite_(
+  { status: "submitted", revision: 5 },
+  { status: "submitted", revision: 6 }
+);
+assert.equal(correctedFinal.kind, "accept");
 
 const unknownAnswers = { ...draftAnswers(), arbitrary: "column injection" };
 assert.equal(
@@ -303,5 +310,25 @@ assert.deepEqual(
   ),
   [["done", "submitted", "complete"]]
 );
+
+const lockCalls = [];
+assert.throws(
+  () =>
+    withLock_(
+      {
+        waitLock(timeout) {
+          lockCalls.push(["wait", timeout]);
+        },
+        releaseLock() {
+          lockCalls.push(["release"]);
+        },
+      },
+      () => {
+        throw new Error("operation failed");
+      }
+    ),
+  /operation failed/
+);
+assert.deepEqual(lockCalls, [["wait", 30000], ["release"]]);
 
 console.log("Apps Script contract checks passed.");

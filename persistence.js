@@ -35,6 +35,13 @@
       options.onState(state);
     }
 
+    function permanentError(message, code) {
+      const error = new Error(message);
+      error.code = code;
+      error.retryable = false;
+      return error;
+    }
+
     function cancelTimer() {
       if (timer !== null) options.clearTimer(timer);
       timer = null;
@@ -75,7 +82,22 @@
       try {
         const ack = await options.send(job.snapshot);
         if (!ack || !ack.ok) {
-          throw new Error((ack && ack.message) || "save failed");
+          const error = new Error((ack && ack.message) || "save failed");
+          error.code = ack && ack.code;
+          error.retryable = !ack || ack.code === "server_error";
+          throw error;
+        }
+        if (
+          job.kind === "final" &&
+          (ack.status !== "submitted" ||
+            ack.accepted_revision !== job.snapshot.revision)
+        ) {
+          throw permanentError(
+            "Server did not confirm submitted revision " +
+              job.snapshot.revision +
+              ".",
+            "revision_mismatch"
+          );
         }
         emit("saved");
         retryIndex = 0;
@@ -83,12 +105,19 @@
           finalJob = null;
           stopped = true;
           job.resolve(ack);
+        } else if (ack.status === "submitted" && !finalJob) {
+          pending = null;
+          stopped = true;
         }
       } catch (error) {
-        emit("offline");
+        emit(error.retryable === false ? "failed" : "offline");
         if (job.kind === "final") {
           finalJob = null;
           job.reject(error);
+        } else if (error.retryable === false) {
+          if (!pending || pending.revision <= job.snapshot.revision) {
+            pending = null;
+          }
         } else if (!finalJob) {
           if (!pending || pending.revision < job.snapshot.revision) {
             pending = job.snapshot;
