@@ -82,7 +82,8 @@ assert.equal(typeof C.submit.saving, "string");
 assert.equal(typeof C.submit.saved, "string");
 assert.equal(typeof C.submit.savedOffline, "string");
 assert.match(C.submit.contact, /mailto:angel@arcadiaimpact\.org/, "contact line links the email address");
-assert.match(html, /<p class="hint contact" id="contactNote"><\/p>\s*<\/section>/, "contact line sits at the bottom of the final step");
+assert.match(html, /data-step="5">[\s\S]*?id="thanksBody"[\s\S]*?<p class="hint contact" id="contactNote"><\/p>\s*<\/section>/, "contact line sits on the thank-you page");
+assert.doesNotMatch(html, /data-step="4">[\s\S]*?id="contactNote"[\s\S]*?data-step="5"/, "contact line is not on the submit step");
 assert.match(html, /\$\("contactNote"\)\.innerHTML = C\.submit\.contact/);
 
 console.log("Survey content and structure checks passed.");
