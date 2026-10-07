@@ -11,10 +11,17 @@ window.CONTENT = {
   footer: "Arcadia Impact · Measuring automation in AI safety research",
 
   intro: {
-    title: "Measuring automation in AI safety research",
+    title: "Why We’re Doing This",
     paragraphs: [
-      "Anthropic and OpenAI have started publishing how much of their AI R&D is now done by AIs. We want the equivalent picture for AI safety: how researchers like you actually use agents today, what resists automation, and how this changes over time.",
-      "Most questions take seconds. Two short grids ask for time estimates — that's where accuracy matters most. Thank you!"
+      "We want to understand the state of automated research in AI safety compared with capabilities research. Right now, there's no existing way to measure this.",
+
+      "Frontier labs have started publishing how much of their AI R&D is now done by AI <a href='https://www.anthropic.com/institute/measuring-pace-of-ai-development#footnote-1' target='_blank' rel='noopener noreferrer'>[1]</a><a href='https://openai.com/index/research-acceleration-view-inside-openai/' target='_blank' rel='noopener noreferrer'>[2]</a>, but they do not separate safety from capabilities. We want to take the first step towards measuring this for AI safety, and learn which tasks AIs help speed up and what the bottlenecks are. We acknowledge that measuring this accurately seems hard, but we think a scrappy point estimate will be valuable. Part of this process is figuring out how to measure this better.",
+
+      "A quantified measure will serve as an evidence base for AI safety researchers, strategists and policymakers to inform policy and resource allocation. Over time, we want this to become a public baseline that tracks the capabilities–safety gap and pushes labs to report the two separately.",
+
+      "<strong>Dual Use & Privacy</strong>",
+      "We acknowledge that insights gained from this survey have the potential to speed up capabilities work. We will not release scaffolds, advice, or artifacts that we think could speed up capabilities research. All individual responses will be anonymised and kept private, and we will only publish aggregated results. You can skip any question, especially if you think answering could cause harm.",
+
     ],
     startLabel: "Start"
   },
@@ -23,49 +30,75 @@ window.CONTENT = {
   // "id" is the column name in the results sheet. Change "name"/"detail" freely,
   // but NEVER change an id once the survey is live (it would split the data).
   tasks: [
-    { id: "conceptual", name: "Conceptual / strategy / RRL", detail: "idea generation, strategy work, related-work review" },
-    { id: "design", name: "Experiment design", detail: "experiment plans, environments, datasets, metrics" },
-    { id: "infra", name: "Building experiment infra", detail: "writing code to implement the plan" },
-    { id: "running", name: "Running experiments", detail: "launching & orchestrating runs, running evals" },
-    { id: "writing", name: "Writing / communication", detail: "analysing results, docs, papers" }
+    { id: "conceptual", name: "Conceptual / strategy work, idea generation", detail: "Reading relevant literature, papers, etc." },
+    { id: "design", name: "Experiment design", detail: "Writing experiment plans; designing environments, datasets, and metrics" },
+    { id: "infra", name: "Building experiment infra", detail: "Writing code to implement the experiment plan" },
+    { id: "running", name: "Running experiments", detail: "Launching and orchestrating training runs; running evals" },
+    { id: "writing", name: "Writing / communication", detail: "Analysing and interpreting results; writing docs for colleagues or external audiences, and papers" },
+    { id: "collaborating", name: "Collaborating", detail: "People management, peer collaboration, meetings, mentorship, and project/research management" }
   ],
 
   about: {
-    title: "About you",
+    title: "Questions",
     preamble: [],
-    email: { label: "Email", hint: "Optional — only if you opt in for future comms & follow-up surveys." },
-    role: { label: "Role / title" },
-    experience: { label: "AI safety experience",
-      options: ["≤ 3 months", "< 1 year", "< 2 years", "2–5 years", "5+ years"] },
-    org: { label: "Org type",
-      options: ["Fellowship", "Independent", "Research org", "Frontier lab (MTS)"],
-      otherLabel: "Other", otherPlaceholder: "Your org type" },
-    usage: { label: "How do you use AIs to help with your work?",
-      hint: "Type of tasks, bespoke scaffolds, sub-agents, Claude vs Codex, etc. — as much detail as possible!" }
+    email: { label: "Email", hint: "Optional — if you opt in for future communications and surveys." },
+    jobTitle: {
+      label: "Job Title",
+      options: ["Fellow", "Member of Technical Staff", "Research Lead", "Programme Manager", "Senior Leadership"],
+      otherLabel: "Other", otherPlaceholder: "Please specify your job title"
+    },
+    roleType: {
+      label: "Role type",
+      options: ["Technical AI Safety", "Policy / Governance", "Field-building", "Grant-making"],
+      otherLabel: "Other", otherPlaceholder: "Please specify your role type"
+    },
+    experience: { label: "Coding experience (total overall years with and without AI assistance)",
+      options: ["< 1 year", "1-2 years", "2–5 years", "5+ years"] },
+    usage: { label: "Describe how you use AIs to help with your work",
+      hint: "What types of tasks, bespoke scaffolds, sub-agents, Claude vs Codex, etc.? Please give as much detail as possible!" }
   },
 
   points: {
-    title: "Where does your work go?",
+    title: "Distribute 100 points",
     preamble: [
-      "Distribute 100 points across the five task categories by the volume of work in your role. The total updates as you type — it has to land on exactly 100 before you can continue."
+      "Over the last 3 months, how much did each of these six categories contribute to your outputs or the work your role is expected to deliver?",
+      "Count accordingly even if AI now does most of it. For example, if most of your outputs come from experiments but AI mostly runs them, experiments still get a high share."
     ],
     colTask: "Task category",
     colPoints: "Points",
     totalLabel: "Total",
     needHint: "needs to be exactly 100",
     badCellHint: "each value must be between 0 and 100",
-    okHint: "perfect — carry on",
+    okHint: "Nice, carry on.",
     overSuffix: " over",
     toGoSuffix: " to go"
   },
 
   hours: {
-    title: "Active human time per task",
+    title: "Active human time on a recent project",
     preamble: [
-      "From your most recent completed publishable output, think of one representative task per category. Enter <strong>active human hours</strong> — prompting, reviewing, fixing, monitoring. Time waiting on the agent does not count. All cells are required — if a category isn't part of your role, enter 0."
+      "<strong>Pick one recent project to anchor your answers.</strong>",
+      "Choose the most recent research output you finished, such as a paper, blog post, or report. If this doesn't apply to you, choose the project you've spent the most time on recently, even if it's exploratory.",
+      "For each category below, think about the related tasks you completed as part of that project."
+    ],
+    reminders: [
+      "Active hours means your own hands-on time prompting, reviewing, and fixing. Don't count time spent waiting on AI while you did something else.",
+      "Leave a row blank if this is not a task you do for your role",
+      "For this question, we’d appreciate a few more minutes of your time to be as accurate as you can.",
+    ],
+    instructionLead: "For each category, answer all four questions:",
+    instructions: [
+      "How many active hours would you have spent doing the same task to the same quality without AI assistance?",
+      "How many active hours would you have spent doing the same task to the same quality using AI models/tools from 1 year ago?",
+      "How many active hours do you spend on it now, using current AI tools?",
+      "How many active hours do you predict you’ll spend on it 6 months from now?"
+    ],
+    oneYearAgoGuide: [
+      "Available 1 year ago: Cursor, Claude Code, GPT-5, GPT-5 Codex, Sonnet 4.5, and Haiku 4.5.",
+      "Out of scope: Claude Opus 4.5, GPT-5.1, Gemini 3, and Grok 4.1 were released after October 2025."
     ],
     colTask: "Task",
-    eraHeaders: ["Without agentic AI", "Models from 1 yr ago", "Now", "In 6 months (projected)"],
+    eraHeaders: ["Without AI assistance", "Using AI tools from 1 year ago", "Using current AI tools", "Projection 6 months from now"],
     cellPlaceholder: "hrs",
     notes: { label: "Notes on your estimates",
       hint: "Optional — anything that makes these numbers easier to interpret (what the representative tasks were, where you're least sure…)." },
@@ -75,37 +108,33 @@ window.CONTENT = {
   barriers: {
     title: "Automation barriers",
     preamble: [],
-    highvalue: { label: "What tasks would be the highest value for you to automate that you currently aren't or can't?" },
-    reason: { label: "For those tasks, what's the main reason? If you've tried, what went wrong?",
-      hint: "e.g. hard to verify outputs, too much context to explain, cost, safeguards/refusals — if it's a capability issue, please be specific. \"I can do task X better than the model, because…\" / \"I have no way of checking if models do it well\" / \"too hard to give the model enough context\" / \"annoying to hand off because… (auto-mode refusals etc.)\"" },
-    hardais: { label: "What in AI safety work specifically do you think is hard to automate?" },
-    fraction: { label: "Of the research outputs you produced in the last 3 months, roughly what fraction would simply not exist without AI assistance?",
-      options: ["0%", "<10%", "10–30%", "30–60%", "60–80%", ">80%"],
-      commentPlaceholder: "Expound if you like (optional)" },
+    highvalue: { label: "What research tasks would be the highest value for you to automate that you currently aren’t or can’t?" },
+    reason: { label: "For the tasks you mentioned above, what’s stopping you? If you have tried, describe what you did and what went wrong.",
+      hint: "For example: “I can do task X better than the model, because…” / “Task X is too hard to define and give the model enough context” / “It’s annoying to hand off task X to AIs because…” (for example, running into auto-mode refusals)." },
     tracking: { label: "How do you keep track of what the agents did?" }
   },
 
   optional: {
-    title: "Optional extras",
+    title: "",
     preamble: [],
-    // Add or remove questions freely; "key" names the field in the stored response.
-    questions: [
-      { key: "own_metrics", label: "Are you already tracking automation metrics in your own org?" },
-      { key: "referrals", label: "Who else should we talk to?" }
-    ]
+    questions: []
   },
 
   nav: { next: "Next", back: "Back", submit: "Submit" },
   validation: {
     stillNeeded: "Still needed: ",
-    aboutLabels: { role: "role", experience: "experience", org: "org type", usage: "how you use AIs" },
-    barrierLabels: { highvalue: "highest-value tasks", reason: "main reason", hardais: "hard to automate", fraction: "fraction question", tracking: "agent tracking" }
+    aboutLabels: { jobTitle: "job title", roleType: "role type", experience: "coding experience", usage: "how you use AIs" },
+    barrierLabels: { highvalue: "highest-value tasks", reason: "what is stopping you", tracking: "agent tracking" }
   },
   // Where responses are sent. Paste the Apps Script web app URL here (see SETUP.md).
   // While this is empty, the page runs as a mock: Submit only shows the payload.
   submit: {
     endpoint: "",
     sending: "Sending…",
+    saving: "Saving…",
+    saved: "Saved",
+    savedOffline: "Saved on this device — offline",
+    saveFailed: "Could not reach the server — your answers remain on this device",
     retry: "Try again",
     errNetwork: "Your answers were not saved yet — please check your connection and press Try again. Nothing you typed has been lost.",
     errServer: "Something went wrong saving your answers (nothing you typed has been lost). Please press Try again. If it keeps failing, email us and we'll sort it out. Error: ",
