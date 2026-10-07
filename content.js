@@ -127,10 +127,10 @@ window.CONTENT = {
     aboutLabels: { jobTitle: "job title", roleType: "role type", experience: "coding experience", usage: "how you use AIs" },
     barrierLabels: { highvalue: "highest-value tasks", reason: "what is stopping you", tracking: "agent tracking" }
   },
-  // Where responses are sent. Paste the Apps Script web app URL here (see SETUP.md).
+  // Where responses are sent: the Cloudflare Worker write API (see SETUP.md).
   // While this is empty, the page runs as a mock: Submit only shows the payload.
   submit: {
-    endpoint: "https://script.google.com/macros/s/AKfycbxbIV0tw_cK9fWpGrlk-dihlwKojSnovu02f1vn_25Rst-JojwQ1GJ0qDfylgwpXQaK/exec",
+    endpoint: "https://automation-survey.arcadiaimpact.workers.dev",
     sending: "Sending…",
     saving: "Saving…",
     saved: "Saved",
