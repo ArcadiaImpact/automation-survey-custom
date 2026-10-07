@@ -1,9 +1,44 @@
 # Saving responses: setup
 
-Responses go into a Google Sheet. A small Google Apps Script attached to that
-sheet ([`apps-script/Code.gs`](apps-script/Code.gs)) receives anonymous drafts
-and final submissions. The survey page only shows "thank you" after the script
+Responses are written by a small Cloudflare Worker ([`worker/`](worker/))
+into D1, Cloudflare's hosted SQLite database. The Worker confirms a save in
+well under a second. A Google Apps Script attached to the results Sheet
+([`apps-script/Code.gs`](apps-script/Code.gs)) copies new events from the
+Worker into the Sheet every minute, so the Sheet stays the place the team
+looks at results. The survey page shows "thank you" only after the Worker
 confirms the final response was written.
+
+## 0. Deploy the write API (Cloudflare Worker)
+
+One-time, from the `worker/` folder, by whoever owns the Cloudflare account:
+
+```
+npm install
+npx wrangler login                               # opens a browser window
+npx wrangler d1 create automation-survey         # prints a database_id
+```
+
+Paste the printed `database_id` into `worker/wrangler.toml`, then:
+
+```
+npx wrangler d1 execute automation-survey --remote --file=schema.sql
+npx wrangler deploy                              # prints https://automation-survey.<account>.workers.dev
+npx wrangler secret put EXPORT_SECRET            # paste a long random string, e.g. from `openssl rand -hex 32`
+```
+
+Keep the secret: the Apps Script needs the same value (step 3). Check the
+deployment in a private window: the Worker URL shows
+`{"ok":true,"message":"Automation survey endpoint is running."}`.
+
+Later code changes to the Worker are `npx wrangler deploy` again. Logs:
+`npx wrangler tail`. A full database dump:
+`npx wrangler d1 export automation-survey --remote --output=backup.sql`.
+The free tier covers this survey; the Workers Paid plan is optional.
+
+To run everything on a laptop without an account: `npx wrangler d1 execute
+automation-survey --local --file=schema.sql`, put `EXPORT_SECRET=local-secret`
+in `worker/.dev.vars`, then `npm run dev` serves the Worker on
+`http://127.0.0.1:8787`.
 
 ## 1. Create the sheet
 
@@ -31,14 +66,20 @@ schema intentionally rejects unexpected existing headers.
 2. Add `BACKUP_FOLDER_ID` with the restricted backup folder's ID.
 3. Add `ALERT_EMAIL` with the operator address that should receive internal
    save-failure alerts. Alerts are limited to one per hour.
-4. Select `installMaintenanceTriggers` in the function menu and click **Run**.
-   Authorize Sheets, Drive, and Mail access.
-5. Open **Triggers** and confirm exactly:
-   - one hourly `cleanupExpiredDrafts` trigger; and
-   - one daily `backupSubmittedResponses` trigger.
+4. Add `WORKER_URL` (the `https://….workers.dev` URL from step 0) and
+   `EXPORT_SECRET` (the same value given to `wrangler secret put`).
+5. Select `installMaintenanceTriggers` in the function menu and click **Run**.
+   Authorize Sheets, Drive, Mail and external-request access.
+6. Open **Triggers** and confirm exactly:
+   - one hourly `cleanupExpiredDrafts` trigger;
+   - one daily `backupSubmittedResponses` trigger; and
+   - one every-minute `syncFromWorker` trigger.
 
-Running `installMaintenanceTriggers` again replaces only these two managed
-triggers, so it is safe after script updates.
+Running `installMaintenanceTriggers` again replaces only these three managed
+triggers, so it is safe after script updates. The sync keeps its place in a
+`SYNC_AFTER_EVENT_ID` property; delete that property to re-mirror everything
+from the start (existing rows are overwritten in place, events are not
+duplicated).
 
 ## 4. Deploy it as a web app
 
@@ -92,21 +133,24 @@ If you see a Google sign-in page instead, "Who has access" is not set to
 
 ## 6. Point the survey at it
 
-In [`content.js`](content.js), paste the URL into `submit.endpoint`:
+In [`content.js`](content.js), paste the Worker URL from step 0 into
+`submit.endpoint`:
 
 ```js
 submit: {
-  endpoint: "https://script.google.com/macros/s/XXXX/exec",
+  endpoint: "https://automation-survey.<account>.workers.dev",
 ```
 
 Commit and push to the production branch. The "mock" badge disappears and
-background saving starts after the respondent presses Start.
+background saving starts after the respondent presses Start. During the
+transition the Apps Script web app (step 4) keeps accepting writes too, so
+the two can coexist; it is retired in a later change.
 
 ## 7. Test before sending the link to anyone
 
 - [ ] Press Start and enter a partial response. A `draft` row appears in
   `responses`, an event appears in `response_events`, and neither contains the
-  optional email.
+  optional email. Both appear in the Sheet within two minutes.
 - [ ] Type rapidly. Revisions increase and no two events share an `event_key`.
 - [ ] Turn Wi-Fi off and continue typing. The page says the answers remain on
   this device. Restore Wi-Fi and confirm the latest snapshot reaches the Sheet.
