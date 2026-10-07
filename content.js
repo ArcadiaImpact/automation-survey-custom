@@ -129,7 +129,7 @@ window.CONTENT = {
   // Where responses are sent. Paste the Apps Script web app URL here (see SETUP.md).
   // While this is empty, the page runs as a mock: Submit only shows the payload.
   submit: {
-    endpoint: "",
+    endpoint: "https://script.google.com/macros/s/AKfycbxbIV0tw_cK9fWpGrlk-dihlwKojSnovu02f1vn_25Rst-JojwQ1GJ0qDfylgwpXQaK/exec",
     sending: "Sending…",
     saving: "Saving…",
     saved: "Saved",

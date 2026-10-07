@@ -57,6 +57,24 @@ For every later script update, use **Deploy → Manage deployments → pencil
 icon → Version: New version → Deploy**. Do not create another deployment:
 that would create a new URL and leave the survey pointing at old code.
 
+### Deploying from the command line instead
+
+The repo carries a `clasp` project (`.clasp.json`, `.claspignore`,
+`apps-script/appsscript.json`) bound to the production Sheet, so steps 2 and
+4 can be run from a terminal. One-time: enable the Apps Script API at
+https://script.google.com/home/usersettings and run `npx @google/clasp login`.
+Then, after editing `apps-script/Code.gs`:
+
+```
+npx @google/clasp push -f
+npx @google/clasp update-deployment <deploymentId> -d "what changed"
+```
+
+`npx @google/clasp list-deployments` shows the deployment ID; the one with a
+version number is the live web app. The manifest sets the web app to run as
+the deployer and accept anonymous visitors. Authorization (step 3) still
+happens once in the editor, which `npx @google/clasp open-script` opens.
+
 > If "Anyone" is not offered in step 2, the Workspace admin has blocked
 > sharing outside the organisation. Ask them to allow it for you, or the form
 > will only work for people signed in to an arcadiaimpact.org account.
