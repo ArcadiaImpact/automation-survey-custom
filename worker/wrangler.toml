@@ -1,0 +1,21 @@
+name = "automation-survey"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[observability]
+enabled = true
+
+[vars]
+ALLOWED_ORIGINS = "https://arcadiaimpact.github.io,http://127.0.0.1:8000,http://localhost:8000"
+
+# EXPORT_SECRET is a secret: `npx wrangler secret put EXPORT_SECRET` in production,
+# a line `EXPORT_SECRET=local-secret` in worker/.dev.vars for `wrangler dev`.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "automation-survey"
+# Replace with the database_id printed by `npx wrangler d1 create automation-survey`.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+crons = ["17 * * * *"]
