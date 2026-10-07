@@ -59,16 +59,19 @@ operational complexity for the expected response volume.
 
 ## Respondent disclosure
 
-The introduction must disclose the behavior before server autosaving begins:
+**Deferred — do not implement in the initial backend work.** Keep the proposed
+copy in this design for a later privacy and content review. When enabled, the
+introduction should disclose the behavior before server autosaving begins:
 
 > After you start, we save anonymous partial answers so your progress is not
 > lost. If you do not submit, the partial response is removed from active
 > storage 48 hours after your last activity. Your optional email address is
 > not included in partial saves.
 
-Server draft saving begins only after the respondent presses **Start**. The
-optional email remains local until final submission. Drafts are excluded from
-analysis unless a separate, explicitly disclosed research policy is approved.
+The initial implementation still starts server draft saving only after the
+respondent presses **Start**. The optional email remains local until final
+submission, and drafts are excluded from analysis. Deferring the disclosure
+changes only the survey copy; it does not defer these backend privacy controls.
 
 ## Response lifecycle
 
