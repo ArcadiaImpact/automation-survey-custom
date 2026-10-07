@@ -9,7 +9,8 @@ vm.runInContext(
   `${source}
   this.__test = {
     parseRequest_, validateEnvelope_, validateAnswers_, decideWrite_,
-    buildResponseRecord_, eventKey_, toCell_, processWriteWithStore_
+    buildResponseRecord_, eventKey_, toCell_, processWriteWithStore_,
+    expiredDraftIds_, toCsv_, submittedRows_
   };`,
   sandbox
 );
@@ -23,6 +24,9 @@ const {
   eventKey_,
   toCell_,
   processWriteWithStore_,
+  expiredDraftIds_,
+  toCsv_,
+  submittedRows_,
 } = sandbox.__test;
 
 function validAnswers() {
@@ -247,5 +251,57 @@ const oldAck = processWriteWithStore_(
 );
 assert.equal(oldAck.accepted_revision, 7);
 assert.equal(store.events.length, 1);
+
+const NOW = Date.parse("2026-10-07T09:00:00.000Z");
+const HOUR = 60 * 60 * 1000;
+const rows = [
+  {
+    response_id: "old",
+    status: "draft",
+    updated_at: new Date(NOW - 49 * HOUR),
+  },
+  {
+    response_id: "boundary",
+    status: "draft",
+    updated_at: new Date(NOW - 48 * HOUR),
+  },
+  {
+    response_id: "fresh",
+    status: "draft",
+    updated_at: new Date(NOW - 47 * HOUR),
+  },
+  {
+    response_id: "done",
+    status: "submitted",
+    updated_at: new Date(NOW - 100 * HOUR),
+  },
+];
+assert.deepEqual(Array.from(expiredDraftIds_(rows, NOW)), [
+  "old",
+  "boundary",
+]);
+
+const csv = toCsv_([
+  ["response_id", "status", "answer"],
+  ["one", "submitted", 'comma, quote " and\nnewline'],
+]);
+assert.equal(
+  csv,
+  'response_id,status,answer\r\none,submitted,"comma, quote "" and\nnewline"'
+);
+
+assert.deepEqual(
+  Array.from(
+    submittedRows_(
+      ["response_id", "status", "answer"],
+      [
+        ["draft", "draft", "partial"],
+        ["done", "submitted", "complete"],
+      ]
+    ),
+    (row) => Array.from(row)
+  ),
+  [["done", "submitted", "complete"]]
+);
 
 console.log("Apps Script contract checks passed.");

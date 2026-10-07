@@ -18,6 +18,8 @@ const RESPONSES_SHEET = 'responses';
 const EVENTS_SHEET = 'response_events';
 const MAX_BODY = 200000;      // characters; a real response is ~10–40k at most
 const CELL_LIMIT = 45000;     // Sheets hard limit is 50,000 characters per cell
+const DRAFT_RETENTION_MS = 48 * 60 * 60 * 1000;
+const BACKUP_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const FIXED_COLUMNS = ['received_at', 'response_id', 'content_version'];
 const TASK_IDS = [
   'conceptual', 'design', 'infra', 'running', 'writing', 'collaborating'
@@ -444,6 +446,158 @@ function writeRecord_(sheet, headers, row, record) {
       : '';
   });
   sheet.getRange(row, 1, 1, values.length).setValues([values]);
+}
+
+function expiredDraftIds_(rows, nowMs) {
+  return rows.filter(function (row) {
+    const updatedAt = row.updated_at;
+    const updatedMs = updatedAt && typeof updatedAt.getTime === 'function'
+      ? updatedAt.getTime()
+      : NaN;
+    return row.status === 'draft' &&
+      Number.isFinite(updatedMs) &&
+      nowMs - updatedMs >= DRAFT_RETENTION_MS;
+  }).map(function (row) {
+    return row.response_id;
+  });
+}
+
+function csvCell_(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(text)
+    ? '"' + text.replace(/"/g, '""') + '"'
+    : text;
+}
+
+function toCsv_(rows) {
+  return rows.map(function (row) {
+    return row.map(csvCell_).join(',');
+  }).join('\r\n');
+}
+
+function submittedRows_(headers, rows) {
+  const statusColumn = headers.indexOf('status');
+  if (statusColumn === -1) {
+    throw new Error('Responses sheet has no status column.');
+  }
+  return rows.filter(function (row) {
+    return row[statusColumn] === 'submitted';
+  });
+}
+
+function readDataRows_(sheet, width) {
+  const lastRow = sheet.getLastRow();
+  return lastRow < 2
+    ? []
+    : sheet.getRange(2, 1, lastRow - 1, width).getValues();
+}
+
+function rowsToRecords_(headers, rows) {
+  return rows.map(function (row) {
+    const record = {};
+    headers.forEach(function (header, index) {
+      record[header] = row[index];
+    });
+    return record;
+  });
+}
+
+function deleteRowsForIds_(sheet, headers, rows, idSet) {
+  const idColumn = headers.indexOf('response_id');
+  let removed = 0;
+  for (let index = rows.length - 1; index >= 0; index--) {
+    if (idSet[rows[index][idColumn]]) {
+      sheet.deleteRow(index + 2);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+function cleanupExpiredDrafts() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const responseHeaders = analysisColumns_();
+    const eventHeaders = eventColumns_();
+    const responseSheet = getFixedSheet_(
+      ss, RESPONSES_SHEET, responseHeaders
+    );
+    const eventSheet = getFixedSheet_(ss, EVENTS_SHEET, eventHeaders);
+    const responseRows = readDataRows_(responseSheet, responseHeaders.length);
+    const expired = expiredDraftIds_(
+      rowsToRecords_(responseHeaders, responseRows),
+      Date.now()
+    );
+    const idSet = {};
+    expired.forEach(function (id) { idSet[id] = true; });
+
+    const responsesRemoved = deleteRowsForIds_(
+      responseSheet, responseHeaders, responseRows, idSet
+    );
+    const eventRows = readDataRows_(eventSheet, eventHeaders.length);
+    const eventsRemoved = deleteRowsForIds_(
+      eventSheet, eventHeaders, eventRows, idSet
+    );
+    console.log(
+      'Expired drafts removed: ' + responsesRemoved +
+      '; events removed: ' + eventsRemoved
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function backupSubmittedResponses() {
+  const folderId = PropertiesService.getScriptProperties()
+    .getProperty('BACKUP_FOLDER_ID');
+  if (!folderId) {
+    throw new Error('BACKUP_FOLDER_ID script property is not set');
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const headers = analysisColumns_();
+  const sheet = getFixedSheet_(ss, RESPONSES_SHEET, headers);
+  const rows = readDataRows_(sheet, headers.length);
+  const submitted = submittedRows_(headers, rows);
+  const folder = DriveApp.getFolderById(folderId);
+  const now = new Date();
+  const prefix = 'automation-survey-submitted-';
+  const name = prefix +
+    Utilities.formatDate(now, 'Etc/UTC', 'yyyy-MM-dd') + '.csv';
+
+  if (!folder.getFilesByName(name).hasNext()) {
+    const blob = Utilities.newBlob(
+      toCsv_([headers].concat(submitted)),
+      'text/csv',
+      name
+    );
+    folder.createFile(blob);
+  }
+
+  const cutoff = now.getTime() - BACKUP_RETENTION_MS;
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getName().indexOf(prefix) === 0 &&
+        file.getDateCreated().getTime() <= cutoff) {
+      file.setTrashed(true);
+    }
+  }
+}
+
+function installMaintenanceTriggers() {
+  const managed = ['cleanupExpiredDrafts', 'backupSubmittedResponses'];
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (managed.indexOf(trigger.getHandlerFunction()) !== -1) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger('cleanupExpiredDrafts')
+    .timeBased().everyHours(1).create();
+  ScriptApp.newTrigger('backupSubmittedResponses')
+    .timeBased().everyDays(1).atHour(3).create();
 }
 
 function notifyOwner_(err) {
