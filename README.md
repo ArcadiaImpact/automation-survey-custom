@@ -29,8 +29,24 @@ the `main` branch root.
 ## Saving responses
 
 Responses are written to a Google Sheet by a small Apps Script
-([`apps-script/Code.gs`](apps-script/Code.gs)). One-time setup, a pre-launch
-test checklist and analysis tips are in [`SETUP.md`](SETUP.md).
+([`apps-script/Code.gs`](apps-script/Code.gs)):
+
+- every edit is saved immediately in the respondent's browser;
+- after Start, anonymous drafts are saved to the server without the optional
+  email address;
+- abandoned drafts expire from active storage after 48 hours;
+- revisions and response IDs make retries safe and prevent delayed drafts from
+  replacing submitted responses;
+- final submissions remain in the main Sheet and receive rolling daily CSV
+  backups; and
+- analysis uses only rows whose `status` is `submitted`.
+
+One-time deployment, retention, backup, and pre-launch checks are in
+[`SETUP.md`](SETUP.md). The approved architecture and implementation plan are
+in
+[`docs/superpowers/specs/2026-10-07-survey-response-persistence-design.md`](docs/superpowers/specs/2026-10-07-survey-response-persistence-design.md)
+and
+[`docs/superpowers/plans/2026-10-07-survey-response-persistence.md`](docs/superpowers/plans/2026-10-07-survey-response-persistence.md).
 
 While `submit.endpoint` in `content.js` is empty, the page runs as a mock:
 Submit only shows the JSON payload a submission will contain, and nothing is stored.
