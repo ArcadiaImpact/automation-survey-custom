@@ -544,7 +544,7 @@ const autosave = P.createAutosaveCoordinator({
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: id => clearTimeout(id),
   debounceMs: 3000,
-  minIntervalMs: 5000,
+  minIntervalMs: 120000, // background drafts go out at most every 2 minutes
   retryDelays: [2000, 5000, 15000]
 });
 
@@ -579,9 +579,14 @@ document.addEventListener("visibilitychange", () => {
 // ---------- submit ----------
 // Only show "thank you" once the script has confirmed the row was written.
 // On any failure, keep everything on screen and let the person retry.
-async function sendSnapshot(snapshot){
+async function sendSnapshot(snapshot, signal){
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
+  // The coordinator aborts a background draft when Submit is pressed.
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
   try {
     // text/plain keeps this a "simple" request, so the browser skips the
     // CORS preflight that Apps Script cannot answer.

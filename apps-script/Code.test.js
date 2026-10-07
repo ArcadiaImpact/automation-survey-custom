@@ -10,7 +10,8 @@ vm.runInContext(
   this.__test = {
     parseRequest_, validateEnvelope_, validateAnswers_, decideWrite_,
     buildResponseRecord_, eventKey_, toCell_, processWriteWithStore_,
-    expiredDraftIds_, toCsv_, submittedRows_, withLock_
+    expiredDraftIds_, toCsv_, submittedRows_, withLock_,
+    getFixedSheet_, createSheetStore_
   };`,
   sandbox
 );
@@ -28,6 +29,8 @@ const {
   toCsv_,
   submittedRows_,
   withLock_,
+  getFixedSheet_,
+  createSheetStore_,
 } = sandbox.__test;
 
 function validAnswers() {
@@ -330,5 +333,146 @@ assert.throws(
   /operation failed/
 );
 assert.deepEqual(lockCalls, [["wait", 30000], ["release"]]);
+
+// ---- fewer Sheets round trips per request ----
+
+// A brand-new response cannot already have events, so the duplicate-event
+// lookup is skipped for it and only done when a current row existed.
+{
+  const fresh = createFakeStore();
+  let hasEventCalls = 0;
+  const originalHasEvent = fresh.hasEvent.bind(fresh);
+  fresh.hasEvent = (key) => {
+    hasEventCalls++;
+    return originalHasEvent(key);
+  };
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const first = envelope({ response_id: id, revision: 1 });
+  processWriteWithStore_(fresh, first, JSON.stringify(first), now);
+  assert.equal(hasEventCalls, 0, "new response: no duplicate-event lookup");
+  assert.equal(fresh.events.length, 1);
+  const second = envelope({ response_id: id, revision: 2 });
+  processWriteWithStore_(fresh, second, JSON.stringify(second), now);
+  assert.equal(hasEventCalls, 1, "existing response: lookup still happens");
+  assert.equal(fresh.events.length, 2);
+}
+
+function createFakeCache() {
+  const map = new Map();
+  return {
+    get: (key) => (map.has(key) ? map.get(key) : null),
+    put: (key, value) => {
+      map.set(key, value);
+    },
+  };
+}
+
+function createFakeSheet(headerRow) {
+  const rows = headerRow.length ? [headerRow.slice()] : [];
+  const sheet = {
+    headerReads: 0,
+    finderCalls: 0,
+    _rows: rows,
+    getLastColumn() {
+      return rows[0] ? rows[0].length : 0;
+    },
+    getLastRow() {
+      return rows.length;
+    },
+    setFrozenRows() {},
+    getRange(r, c, nr = 1, nc = 1) {
+      return {
+        getValues() {
+          if (r === 1) sheet.headerReads++;
+          const out = [];
+          for (let i = 0; i < nr; i++) {
+            const row = rows[r - 1 + i] || [];
+            out.push(
+              Array.from({ length: nc }, (_, j) =>
+                row[c - 1 + j] === undefined ? "" : row[c - 1 + j]
+              )
+            );
+          }
+          return out;
+        },
+        setValues(values) {
+          values.forEach((v, i) => {
+            const index = r - 1 + i;
+            rows[index] = rows[index] || [];
+            v.forEach((x, j) => {
+              rows[index][c - 1 + j] = x;
+            });
+          });
+        },
+        createTextFinder(text) {
+          sheet.finderCalls++;
+          return {
+            matchEntireCell() {
+              return this;
+            },
+            findNext() {
+              for (let i = 0; i < nr; i++) {
+                const row = rows[r - 1 + i];
+                if (row && String(row[c - 1]) === text) {
+                  const rowNumber = r + i;
+                  return { getRow: () => rowNumber };
+                }
+              }
+              return null;
+            },
+          };
+        },
+      };
+    },
+  };
+  return sheet;
+}
+
+function createFakeSpreadsheet(sheets) {
+  return {
+    getSheetByName: (name) => sheets[name] || null,
+    insertSheet(name) {
+      sheets[name] = createFakeSheet([]);
+      return sheets[name];
+    },
+  };
+}
+
+// Header validation is remembered in the script cache, so a warm request
+// does not re-read the header row of each tab.
+{
+  const cache = createFakeCache();
+  sandbox.CacheService = { getScriptCache: () => cache };
+  const headers = ["alpha", "beta"];
+  const sheets = { fixed: createFakeSheet(headers) };
+  const ss = createFakeSpreadsheet(sheets);
+  getFixedSheet_(ss, "fixed", headers);
+  getFixedSheet_(ss, "fixed", headers);
+  assert.equal(sheets.fixed.headerReads, 1, "header row validated once, then cached");
+
+  // A wrong schema is still rejected when nothing is cached.
+  sandbox.CacheService = { getScriptCache: () => createFakeCache() };
+  assert.throws(
+    () => getFixedSheet_(createFakeSpreadsheet({ fixed: createFakeSheet(["alpha", "WRONG"]) }), "fixed", headers),
+    /Unexpected headers/
+  );
+}
+
+// Updating an existing response searches for its row once, not once to read
+// and again to write.
+{
+  sandbox.CacheService = { getScriptCache: () => createFakeCache() };
+  const sheets = {};
+  const store = createSheetStore_(createFakeSpreadsheet(sheets));
+  const id = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+  const first = envelope({ response_id: id, revision: 1 });
+  processWriteWithStore_(store, first, JSON.stringify(first), now);
+  const second = envelope({ response_id: id, revision: 2 });
+  processWriteWithStore_(store, second, JSON.stringify(second), now);
+  assert.equal(sheets.responses.finderCalls, 1, "one row search per update");
+  assert.equal(sheets.responses._rows.length, 2, "header row plus one response row");
+  assert.equal(sheets.response_events._rows.length, 3, "header row plus two events");
+  assert.equal(sheets.responses._rows[1][2], 2, "row holds the latest revision");
+}
 
 console.log("Apps Script contract checks passed.");

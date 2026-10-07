@@ -113,16 +113,16 @@ device rather than a timed remote deletion.
 
 After Start, a changed response is queued for server saving:
 
-- after three seconds without another edit;
+- three seconds after the last edit, but at most once every two minutes;
 - when Next or Back is pressed;
 - when the browser returns online; and
 - best-effort when the page is hidden.
 
 Normal navigation never waits for a background save. Only one request is in
 flight at a time; if more edits occur, only the latest pending full snapshot
-is sent next. A minimum interval of five seconds prevents excessive Apps
-Script calls. Sending complete snapshots keeps recovery and server logic
-simple.
+is sent next. A minimum interval of two minutes keeps Apps Script traffic
+low; Next and Back still save immediately. Sending complete snapshots
+keeps recovery and server logic simple.
 
 The UI displays one unobtrusive state:
 
@@ -139,7 +139,9 @@ network delivery is not treated as reliable; local storage is the fallback.
 
 Final submission performs all client validation and sends the complete
 snapshot with `status: submitted`. The submit button is disabled while that
-request is active.
+request is active. A background draft save still in flight is abandoned so
+the final request does not queue behind it; server-side revision ordering
+makes this safe.
 
 The thank-you screen appears only after the server confirms the submitted
 revision. The local draft is cleared only after this acknowledgement. On a

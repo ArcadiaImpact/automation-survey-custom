@@ -1,17 +1,23 @@
 // ============================================================
 // Automation Survey: response receiver (Google Apps Script).
-// Paste this into Extensions → Apps Script of the results Google Sheet.
-// Setup steps are in SETUP.md.
+// Deployed with clasp from apps-script/ (see SETUP.md), or pasted into
+// Extensions → Apps Script of the results Google Sheet.
 //
-// What it does, per submission:
-//   1. Parse the JSON the survey page sends.
-//   2. Take a lock so two simultaneous submissions can't clash.
-//   3. Flatten it to columns (points.design, hours.design.now, ...).
-//      New questions automatically get new columns at the right edge.
-//   4. If this response_id is already in the sheet (a retry), overwrite
-//      that row; otherwise append a new row.
-//   5. Also store the untouched JSON in raw_json, as a lossless backup.
-//   6. Reply {ok:true}. The page only shows "thank you" after this.
+// What it does, per request (draft or final):
+//   1. Parse and strictly validate the JSON the survey page sends. The
+//      schema is fixed: unknown fields are rejected, never turned into
+//      new Sheet columns.
+//   2. Take a script lock so simultaneous requests cannot clash.
+//   3. Compare revisions: a stale or duplicate write is acknowledged with
+//      the current state and changes nothing; a submitted response is
+//      never downgraded by a late draft.
+//   4. Write the current state to the `responses` tab (one row per
+//      response_id) and append the accepted snapshot to `response_events`.
+//   5. Store the untouched JSON in raw_json columns as a lossless backup.
+//   6. Reply {ok:true, accepted_revision, status}. The page shows
+//      "thank you" only after a submitted acknowledgement.
+// Hourly cleanup removes drafts idle for 48 h; a daily job backs up
+// submitted rows to CSV. Both are installed by installMaintenanceTriggers.
 // ============================================================
 
 const RESPONSES_SHEET = 'responses';
@@ -345,6 +351,7 @@ function buildEventRecord_(response, now) {
 function processWriteWithStore_(store, incoming, rawBody, now) {
   let current = store.getResponse(incoming.response_id);
   const decision = decideWrite_(current, incoming);
+  const isNew = !current;
 
   if (decision.kind === 'accept') {
     current = buildResponseRecord_(incoming, rawBody, current, now);
@@ -353,8 +360,9 @@ function processWriteWithStore_(store, incoming, rawBody, now) {
     return acknowledgement_(current);
   }
 
+  // A brand-new response cannot have events yet, so skip that lookup.
   const key = eventKey_(current.response_id, current.revision);
-  if (!store.hasEvent(key)) {
+  if (isNew || !store.hasEvent(key)) {
     store.appendEvent(buildEventRecord_(current, now));
   }
   return acknowledgement_(current);
@@ -373,26 +381,35 @@ function acknowledgement_(current) {
 }
 
 function processWrite_(incoming, rawBody, now) {
-  return processWriteWithStore_(createSheetStore_(), incoming, rawBody, now);
+  return processWriteWithStore_(
+    createSheetStore_(SpreadsheetApp.getActiveSpreadsheet()),
+    incoming, rawBody, now
+  );
 }
 
-function createSheetStore_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function createSheetStore_(ss) {
   const responseHeaders = analysisColumns_();
   const eventHeaders = eventColumns_();
   const responseSheet = getFixedSheet_(ss, RESPONSES_SHEET, responseHeaders);
   const eventSheet = getFixedSheet_(ss, EVENTS_SHEET, eventHeaders);
 
+  // Row positions found while reading are reused when writing, so an
+  // update searches the sheet once. The store lives for one locked request.
+  const rowById = {};
+
   return {
     getResponse: function (id) {
       const row = findRow_(responseSheet, responseHeaders, 'response_id', id);
+      rowById[id] = row;
       return row ? readRecord_(responseSheet, responseHeaders, row) : null;
     },
     putResponse: function (record) {
-      const existing = findRow_(
-        responseSheet, responseHeaders, 'response_id', record.response_id
-      );
-      const row = existing || responseSheet.getLastRow() + 1;
+      const id = record.response_id;
+      const known = Object.prototype.hasOwnProperty.call(rowById, id)
+        ? rowById[id]
+        : findRow_(responseSheet, responseHeaders, 'response_id', id);
+      const row = known || responseSheet.getLastRow() + 1;
+      rowById[id] = row;
       writeRecord_(responseSheet, responseHeaders, row, record);
     },
     hasEvent: function (key) {
@@ -414,6 +431,11 @@ function getFixedSheet_(ss, name, headers) {
     sheet.setFrozenRows(1);
     return sheet;
   }
+  // Validating the header row costs a Sheets read per tab per request.
+  // Remember a passed check for ten minutes.
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'schema:' + name + ':' + hashText_(headers.join('|'));
+  if (cache.get(cacheKey)) return sheet;
   const actual = sheet.getRange(1, 1, 1, sheet.getLastColumn())
     .getValues()[0].map(String);
   if (actual.length !== headers.length ||
@@ -422,7 +444,18 @@ function getFixedSheet_(ss, name, headers) {
       'Unexpected headers in "' + name + '". Use a clean sheet or restore the expected schema.'
     );
   }
+  cache.put(cacheKey, '1', 600);
   return sheet;
+}
+
+// Short stable fingerprint of a string (FNV-1a), used for cache keys.
+function hashText_(text) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 function findRow_(sheet, headers, keyColumn, value) {

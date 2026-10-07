@@ -25,6 +25,7 @@
     let pending = null;
     let finalJob = null;
     let inFlight = false;
+    let current = null;
     let timer = null;
     let stopped = false;
     let lastStartedAt = -Infinity;
@@ -75,12 +76,18 @@
       const job = finalJob || { snapshot: pending, kind: "draft" };
       let retryWait;
       if (job.kind === "draft") pending = null;
+      job.controller =
+        typeof AbortController === "function" ? new AbortController() : null;
+      current = job;
       inFlight = true;
       lastStartedAt = options.now();
       emit("saving");
 
       try {
-        const ack = await options.send(job.snapshot);
+        const ack = await options.send(
+          job.snapshot,
+          job.controller ? job.controller.signal : undefined
+        );
         if (!ack || !ack.ok) {
           const error = new Error((ack && ack.message) || "save failed");
           error.code = ack && ack.code;
@@ -110,7 +117,9 @@
           stopped = true;
         }
       } catch (error) {
-        emit(error.retryable === false ? "failed" : "offline");
+        if (!job.cancelled) {
+          emit(error.retryable === false ? "failed" : "offline");
+        }
         if (job.kind === "final") {
           finalJob = null;
           job.reject(error);
@@ -127,6 +136,7 @@
           retryIndex++;
         }
       } finally {
+        current = null;
         inFlight = false;
         if (finalJob) schedule(0);
         else if (pending && timer === null) schedule(retryWait);
@@ -156,6 +166,13 @@
         }
         pending = null;
         cancelTimer();
+        if (current && current.kind === "draft") {
+          // Do not wait behind a background draft: abandon it and send the
+          // final answers now. The server orders writes by revision, so a
+          // draft that still lands cannot overwrite the final.
+          current.cancelled = true;
+          if (current.controller) current.controller.abort();
+        }
         return new Promise((resolve, reject) => {
           finalJob = { snapshot, kind: "final", resolve, reject };
           if (!inFlight) schedule(0);

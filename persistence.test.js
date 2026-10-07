@@ -324,6 +324,52 @@ async function run() {
     assert.equal(scheduler.size(), 0);
   }
 
+  {
+    // Submit must not wait behind an in-flight draft: the draft request is
+    // aborted and the final request goes out at once, with no spurious
+    // offline/failed state from the abort.
+    const scheduler = createScheduler();
+    const states = [];
+    const calls = [];
+    let draftSignal = null;
+    const coordinator = createAutosaveCoordinator(
+      coordinatorOptions(async (value, signal) => {
+        calls.push([value.revision, value.status]);
+        if (value.status === "draft") {
+          draftSignal = signal;
+          await new Promise((_, reject) => {
+            signal.addEventListener("abort", () => {
+              const err = new Error("aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          });
+        }
+        return { ok: true, accepted_revision: value.revision, status: value.status };
+      }, scheduler, states)
+    );
+
+    coordinator.queue({ ...snapshot, revision: 20 });
+    scheduler.runNext(); // draft request is now in flight and hangs until aborted
+    assert.ok(draftSignal, "send should receive an abort signal");
+    const finalPromise = coordinator.submit({
+      ...snapshot,
+      revision: 21,
+      status: "submitted",
+    });
+    assert.equal(draftSignal.aborted, true, "in-flight draft is aborted on submit");
+    await new Promise((resolve) => setImmediate(resolve));
+    scheduler.runNext();
+    const ack = await finalPromise;
+    assert.equal(ack.status, "submitted");
+    assert.deepEqual(calls, [
+      [20, "draft"],
+      [21, "submitted"],
+    ]);
+    assert.equal(states.includes("offline"), false, "an aborted draft must not report offline");
+    assert.equal(states.includes("failed"), false, "an aborted draft must not report failed");
+  }
+
   console.log("Browser persistence checks passed.");
 }
 

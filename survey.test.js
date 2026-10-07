@@ -66,6 +66,8 @@ assert.match(html, /id="saveStatus"/);
 assert.match(html, /id="website"/);
 assert.match(html, /function buildSnapshot\(status\)/);
 assert.match(html, /function queueDraftSave\(\)/);
+assert.match(html, /minIntervalMs: 120000/, "background drafts go out at most every 2 minutes");
+assert.match(html, /async function sendSnapshot\(snapshot, signal\)/, "sender accepts the coordinator's abort signal");
 assert.match(html, /window\.addEventListener\("online"/);
 assert.match(html, /document\.addEventListener\("visibilitychange"/);
 assert.doesNotMatch(C.intro.paragraphs.join(" "), /partial answers are saved/i);
