@@ -64,3 +64,46 @@ export async function writeSnapshot(store, incoming, rawBody, now) {
   if (!row) return result(false, "missing_response", "Response was not found.");
   return { ok: true, response_id: row.response_id, accepted_revision: Number(row.revision), status: row.status };
 }
+
+export function pageSize(limit) {
+  const n = Math.floor(Number(limit));
+  if (!Number.isFinite(n) || n === 0) return EXPORT_PAGE_LIMIT;
+  return Math.max(1, Math.min(n, EXPORT_PAGE_LIMIT));
+}
+
+const EVENTS_SQL = `
+SELECT id, event_at, response_id, revision, status, raw_json
+FROM events WHERE id > ? ORDER BY id LIMIT ?`;
+
+// The page is exactly the events with after < id <= last, so the current
+// rows for the page are selected with two parameters, well under D1's
+// 100-bound-parameter limit.
+const PAGE_RESPONSES_SQL = `
+SELECT response_id, status, revision, started_at, updated_at, submitted_at,
+       last_completed_step, content_version, client_updated_at, raw_json
+FROM responses
+WHERE response_id IN (SELECT DISTINCT response_id FROM events WHERE id > ? AND id <= ?)
+ORDER BY response_id`;
+
+export async function exportEvents(store, after, limit) {
+  const events = await store.all(EVENTS_SQL, [after, pageSize(limit)]);
+  if (!events.length) return { events: [], responses: [], next_after: after };
+  const last = events[events.length - 1].id;
+  const responses = await store.all(PAGE_RESPONSES_SQL, [after, last]);
+  return { events, responses, next_after: last };
+}
+
+// Same rule as cleanupExpiredDrafts in Code.gs: a draft idle for 48 h or
+// more goes, with its events. ISO text compares correctly as text.
+export async function deleteExpiredDrafts(store, now) {
+  const cutoff = new Date(now.getTime() - DRAFT_RETENTION_MS).toISOString();
+  const results = await store.batch([
+    {
+      sql: `DELETE FROM events WHERE response_id IN
+              (SELECT response_id FROM responses WHERE status = 'draft' AND updated_at <= ?)`,
+      params: [cutoff],
+    },
+    { sql: `DELETE FROM responses WHERE status = 'draft' AND updated_at <= ?`, params: [cutoff] },
+  ]);
+  return { responses: results[1].meta.changes, events: results[0].meta.changes };
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { openDatabase, fakeD1, envelope, finalEnvelope, plain } from "./helpers.js";
-import { createStore, writeSnapshot } from "../src/write.js";
+import { createStore, writeSnapshot, pageSize, exportEvents, deleteExpiredDrafts, DRAFT_RETENTION_MS } from "../src/write.js";
 
 const ID = envelope().response_id;
 const t1 = new Date("2026-10-07T09:00:00.000Z");
@@ -108,6 +108,73 @@ const rows = (db, table) => db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).
     ])
   );
   assert.equal(rows(db, "events").length, 1, "the first insert was rolled back");
+}
+
+// ---- export paging ----
+assert.equal(pageSize(undefined), 200);
+assert.equal(pageSize(0), 200);
+assert.equal(pageSize("abc"), 200);
+assert.equal(pageSize(-5), 1);
+assert.equal(pageSize(1e9), 200);
+assert.equal(pageSize(50), 50);
+
+{
+  const { store } = fresh();
+  assert.deepEqual(await exportEvents(store, 0, 10), { events: [], responses: [], next_after: 0 });
+  assert.deepEqual((await exportEvents(store, 42, 10)).next_after, 42, "an empty page keeps the cursor");
+}
+
+// Pages follow next_after with no gaps or repeats, and each page carries the
+// current row of every response that appears in it.
+{
+  const { store } = fresh();
+  const other = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  await write(store, envelope({ revision: 1 }), t1);
+  await write(store, envelope({ response_id: other, revision: 1 }), t1);
+  await write(store, envelope({ revision: 2 }), t2);
+  await write(store, finalEnvelope({ revision: 3 }), t3);
+  await write(store, envelope({ response_id: other, revision: 2 }), t3);
+
+  const page1 = await exportEvents(store, 0, 2);
+  assert.deepEqual(page1.events.map((e) => [e.response_id, e.revision]), [[ID, 1], [other, 1]]);
+  assert.equal(page1.next_after, 2);
+  assert.deepEqual(page1.responses.map((r) => [r.response_id, r.revision, r.status]).sort(),
+    [[ID, 3, "submitted"], [other, 2, "draft"]].sort(), "current rows, not the rows as they were");
+
+  const page2 = await exportEvents(store, page1.next_after, 2);
+  assert.deepEqual(page2.events.map((e) => [e.response_id, e.revision]), [[ID, 2], [ID, 3]]);
+  assert.deepEqual(page2.responses.map((r) => r.response_id), [ID], "only responses in this page");
+  assert.equal(page2.events[1].status, "submitted");
+  assert.equal(page2.events[1].raw_json, JSON.stringify(finalEnvelope({ revision: 3 })));
+
+  const page3 = await exportEvents(store, page2.next_after, 2);
+  assert.deepEqual(page3.events.map((e) => [e.response_id, e.revision]), [[other, 2]]);
+  assert.equal(page3.next_after, 5);
+  assert.deepEqual(await exportEvents(store, page3.next_after, 2), { events: [], responses: [], next_after: 5 });
+}
+
+// ---- draft expiry ----
+{
+  const { db, store } = fresh();
+  const base = Date.parse("2026-10-09T09:00:00.000Z");
+  const now = new Date(base);
+  const at = (hoursAgo) => new Date(base - hoursAgo * 3600 * 1000);
+  const ids = {
+    old: "11111111-1111-4111-8111-111111111111",
+    boundary: "22222222-2222-4222-8222-222222222222",
+    fresh: "33333333-3333-4333-8333-333333333333",
+    done: "44444444-4444-4444-8444-444444444444",
+  };
+  await write(store, envelope({ response_id: ids.old, revision: 1 }), at(49));
+  await write(store, envelope({ response_id: ids.boundary, revision: 1 }), at(48));
+  await write(store, envelope({ response_id: ids.fresh, revision: 1 }), at(47));
+  await write(store, finalEnvelope({ response_id: ids.done, revision: 1 }), at(100));
+
+  const removed = await deleteExpiredDrafts(store, now);
+  assert.deepEqual(removed, { responses: 2, events: 2 });
+  assert.deepEqual(rows(db, "responses").map((r) => r.response_id).sort(), [ids.fresh, ids.done].sort());
+  assert.deepEqual(rows(db, "events").map((e) => e.response_id).sort(), [ids.fresh, ids.done].sort());
+  assert.equal(DRAFT_RETENTION_MS, 48 * 60 * 60 * 1000);
 }
 
 console.log("write.test.js passed");
