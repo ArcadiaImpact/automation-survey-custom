@@ -149,7 +149,6 @@ dialog{
 dialog::backdrop{background:rgba(36,51,44,.5)}
 pre{background:var(--soft); border-radius:8px; padding:.9rem; overflow:auto; font-size:.78rem; max-height:40vh}
 .badge{display:inline-block; background:var(--warn); color:#24332C; border-radius:6px; padding:.1rem .5rem; font-size:.8rem; font-weight:600}
-.notice{background:var(--soft); border-left:3px solid var(--ok); border-radius:6px; padding:.6rem .9rem; font-size:.92rem; margin:0 0 1.4rem}
 footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
 </style>
 </head>
@@ -166,7 +165,6 @@ footer{margin-top:3.5rem; font-size:.82rem; color:var(--mid)}
   </div>
 
   <section class="step active" data-step="0">
-    <p class="notice" id="draftNotice" hidden></p>
     <h1 id="introTitle"></h1>
     <div class="lede" id="introParas"></div>
     <div class="nav">
@@ -524,9 +522,6 @@ try {
       const el = document.querySelector(`input[name="${name}"][value="${CSS.escape(v)}"]`);
       if (el) el.checked = true;
     });
-    if (Object.keys(saved.fields || {}).length || Object.keys(saved.radios || {}).length) {
-      setText("draftNotice", C.submit.draftRestored); $("draftNotice").hidden = false;
-    }
   } else if (saved) {
     localStorage.removeItem(DRAFT_KEY);
   }
