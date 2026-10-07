@@ -308,6 +308,25 @@ function eventKey_(responseId, revision) {
   return responseId + ':' + revision;
 }
 
+// Server timestamps are stored as ISO-8601 UTC text. Sheets never converts
+// such text between time zones, whereas a Date cell read back through
+// getValues() comes back shifted by the spreadsheet's UTC offset, so a
+// read-and-rewrite would move started_at by that offset on every save.
+function isDate_(value) {
+  return Object.prototype.toString.call(value) === '[object Date]';
+}
+
+function toMs_(value) {
+  if (isDate_(value)) return value.getTime();
+  if (typeof value === 'string' && value) return Date.parse(value);
+  return NaN;
+}
+
+function toIso_(value) {
+  const ms = toMs_(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+}
+
 function addRawJson_(record, rawBody) {
   const columns = rawJsonColumns_();
   for (let i = 0; i < columns.length; i++) {
@@ -320,10 +339,10 @@ function buildResponseRecord_(incoming, rawBody, current, now) {
     response_id: incoming.response_id,
     status: incoming.status,
     revision: incoming.revision,
-    started_at: current && current.started_at ? current.started_at : now,
-    updated_at: now,
+    started_at: toIso_(current && current.started_at) || toIso_(now),
+    updated_at: toIso_(now),
     submitted_at: incoming.status === 'submitted'
-      ? (current && current.submitted_at ? current.submitted_at : now)
+      ? (toIso_(current && current.submitted_at) || toIso_(now))
       : '',
     last_completed_step: incoming.last_completed_step,
     content_version: incoming.content_version,
@@ -337,7 +356,7 @@ function buildResponseRecord_(incoming, rawBody, current, now) {
 function buildEventRecord_(response, now) {
   const event = {
     event_key: eventKey_(response.response_id, response.revision),
-    event_at: now,
+    event_at: toIso_(now),
     response_id: response.response_id,
     revision: response.revision,
     status: response.status
@@ -487,10 +506,7 @@ function writeRecord_(sheet, headers, row, record) {
 
 function expiredDraftIds_(rows, nowMs) {
   return rows.filter(function (row) {
-    const updatedAt = row.updated_at;
-    const updatedMs = updatedAt && typeof updatedAt.getTime === 'function'
-      ? updatedAt.getTime()
-      : NaN;
+    const updatedMs = toMs_(row.updated_at);
     return row.status === 'draft' &&
       Number.isFinite(updatedMs) &&
       nowMs - updatedMs >= DRAFT_RETENTION_MS;
@@ -500,7 +516,9 @@ function expiredDraftIds_(rows, nowMs) {
 }
 
 function csvCell_(value) {
-  const text = value === null || value === undefined ? '' : String(value);
+  const text = value === null || value === undefined
+    ? ''
+    : isDate_(value) ? value.toISOString() : String(value);
   return /[",\r\n]/.test(text)
     ? '"' + text.replace(/"/g, '""') + '"'
     : text;

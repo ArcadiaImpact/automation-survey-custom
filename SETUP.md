@@ -173,7 +173,9 @@ df.filter(like="hours_active_human.").describe()     # hours per task × era
 ```
 
 Columns look like `points.design` and `hours_active_human.design.now`. Each
-current row is one respondent. Retries update their row, so there are no
+current row is one respondent. `started_at`, `updated_at`, `submitted_at`
+and `event_at` are ISO 8601 UTC text, e.g. `2026-10-07T09:33:20.000Z`;
+parse them with `pd.to_datetime(df["submitted_at"])`. Retries update their row, so there are no
 duplicate current responses to clean up. Analyse only `status = submitted`.
 The `raw_json` columns retain the accepted payload, while `response_events`
 provides revision recovery.

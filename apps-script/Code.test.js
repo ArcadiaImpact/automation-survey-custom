@@ -182,13 +182,39 @@ assert.equal(record.status, "submitted");
 assert.equal(record.revision, 3);
 assert.equal(record["points.conceptual"], 100);
 assert.equal(record["hours_active_human.conceptual.now"], null);
-assert.equal(record.started_at.toISOString(), now.toISOString());
-assert.equal(record.submitted_at.toISOString(), now.toISOString());
+assert.equal(record.started_at, "2026-10-07T09:00:00.000Z", "server timestamps are ISO text");
+assert.equal(record.updated_at, "2026-10-07T09:00:00.000Z");
+assert.equal(record.submitted_at, "2026-10-07T09:00:00.000Z");
 assert.equal(
   eventKey_(submitted.response_id, 3),
   "123e4567-e89b-42d3-a456-426614174000:3"
 );
 assert.equal(toCell_("=1+1"), "'=1+1");
+
+// started_at must survive a read-back-and-rewrite unchanged, and a legacy row
+// whose started_at is still a Date is converted to text so it stops drifting.
+{
+  const tz = createFakeStore();
+  const id = "cccccccc-dddd-4eee-8fff-000000000000";
+  const t1 = new Date("2026-10-07T09:00:00.000Z");
+  const t2 = new Date("2026-10-07T09:45:00.000Z");
+  const first = envelope({ response_id: id, revision: 1 });
+  processWriteWithStore_(tz, first, JSON.stringify(first), t1);
+  const second = envelope({ response_id: id, revision: 2 });
+  processWriteWithStore_(tz, second, JSON.stringify(second), t2);
+  const row = tz.getResponse(id);
+  assert.equal(row.started_at, "2026-10-07T09:00:00.000Z", "started_at keeps the first write time");
+  assert.equal(row.updated_at, "2026-10-07T09:45:00.000Z");
+  assert.equal(tz.events[1].event_at, "2026-10-07T09:45:00.000Z", "event times are ISO text too");
+
+  const legacy = buildResponseRecord_(
+    envelope({ revision: 9 }),
+    "{}",
+    { started_at: new Date("2026-10-06T19:33:20.000Z"), submitted_at: "" },
+    t2
+  );
+  assert.equal(legacy.started_at, "2026-10-06T19:33:20.000Z", "a Date read from an old row becomes text");
+}
 
 const laterDraft = envelope({
   revision: 6,
@@ -290,6 +316,20 @@ assert.deepEqual(Array.from(expiredDraftIds_(rows, NOW)), [
   "old",
   "boundary",
 ]);
+assert.deepEqual(
+  Array.from(
+    expiredDraftIds_(
+      [
+        { response_id: "iso-old", status: "draft", updated_at: "2026-10-05T08:00:00.000Z" },
+        { response_id: "iso-fresh", status: "draft", updated_at: "2026-10-05T10:00:00.001Z" },
+        { response_id: "iso-garbage", status: "draft", updated_at: "not a time" },
+      ],
+      NOW
+    )
+  ),
+  ["iso-old"],
+  "ISO text timestamps are compared correctly; unparseable ones are left alone"
+);
 
 const csv = toCsv_([
   ["response_id", "status", "answer"],
@@ -298,6 +338,11 @@ const csv = toCsv_([
 assert.equal(
   csv,
   'response_id,status,answer\r\none,submitted,"comma, quote "" and\nnewline"'
+);
+assert.equal(
+  toCsv_([[new Date("2026-10-07T09:00:00.000Z")]]),
+  "2026-10-07T09:00:00.000Z",
+  "legacy Date cells export as ISO text"
 );
 
 assert.deepEqual(

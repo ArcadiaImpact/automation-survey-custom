@@ -85,8 +85,9 @@ Each browser draft receives:
 - `client_updated_at`: informational client timestamp.
 
 The server supplies authoritative `started_at`, `updated_at`, and
-`submitted_at` timestamps. Client clocks are never used for retention or write
-ordering.
+`submitted_at` timestamps, stored as ISO 8601 UTC text so that Sheets never
+applies a time-zone conversion to them. Client clocks are never used for
+retention or write ordering.
 
 The lifecycle is monotonic:
 
