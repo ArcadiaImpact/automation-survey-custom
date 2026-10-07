@@ -425,6 +425,8 @@ function createFakeSheet(headerRow) {
   const rows = headerRow.length ? [headerRow.slice()] : [];
   const sheet = {
     headerReads: 0,
+    valueReads: 0,
+    setValuesCalls: 0,
     finderCalls: 0,
     _rows: rows,
     getLastColumn() {
@@ -438,6 +440,7 @@ function createFakeSheet(headerRow) {
       return {
         getValues() {
           if (r === 1) sheet.headerReads++;
+          else sheet.valueReads++;
           const out = [];
           for (let i = 0; i < nr; i++) {
             const row = rows[r - 1 + i] || [];
@@ -450,6 +453,7 @@ function createFakeSheet(headerRow) {
           return out;
         },
         setValues(values) {
+          sheet.setValuesCalls++;
           values.forEach((v, i) => {
             const index = r - 1 + i;
             rows[index] = rows[index] || [];
@@ -602,11 +606,20 @@ function exportedEvent(id, payload, when) {
   mirrorBatch_(ss, batch);
   assert.equal(sheets.responses._rows.length, 3, "header plus two current rows, not three");
   assert.equal(sheets.responses._rows[1][2], 2, "the twice-seen response holds revision 2");
-  assert.equal(sheets.response_events._rows.length, 5, "header plus four events, orphan included");
+  assert.equal(sheets.response_events._rows.length, 4,
+    "header plus three events; the orphan's event is skipped because its draft already expired in the Worker");
+  assert.equal(sheets.responses.valueReads + sheets.response_events.valueReads, 0, "an empty tab is not read");
+  assert.equal(sheets.responses.setValuesCalls, 2, "header row, then the page's new responses as one block");
+  assert.equal(sheets.response_events.setValuesCalls, 2, "header row, then the page's new events as one block");
 
   mirrorBatch_(ss, batch);
   assert.equal(sheets.responses._rows.length, 3, "repeating a page adds no rows");
-  assert.equal(sheets.response_events._rows.length, 5, "repeating a page adds no events");
+  assert.equal(sheets.response_events._rows.length, 4, "repeating a page adds no events");
+  assert.equal(sheets.responses.finderCalls + sheets.response_events.finderCalls, 0, "no per-row searches");
+  assert.equal(sheets.responses.valueReads, 1, "one read of the response_id column per page");
+  assert.equal(sheets.response_events.valueReads, 1, "one read of the event_key column per page");
+  assert.equal(sheets.responses.setValuesCalls, 4, "the two existing rows are rewritten in place");
+  assert.equal(sheets.response_events.setValuesCalls, 2, "nothing new to append on a repeat");
 }
 
 // syncFromWorker: fetches with the secret, pages until a short page, and
@@ -672,6 +685,32 @@ function installSyncFakes({ pages, failWith }) {
   const { props } = installSyncFakes({ pages: [] });
   props.delete("WORKER_URL");
   assert.throws(() => syncFromWorker(), /WORKER_URL and EXPORT_SECRET/);
+}
+
+// Two trigger runs can overlap during a burst. A page that another run has
+// already mirrored (the stored cursor moved past it between this run's fetch
+// and its lock) is skipped, nothing is rewritten, the cursor never moves
+// backwards, and this run continues from the newer cursor.
+{
+  const when = "2026-10-07T09:00:00.000Z";
+  const p = envelope({ revision: 1 });
+  const fakes = installSyncFakes({
+    pages: [{ events: [exportedEvent(1, p, when)], responses: [exportedRow(p, when)], next_after: 1 }],
+  });
+  const realFetch = sandbox.UrlFetchApp.fetch;
+  sandbox.UrlFetchApp.fetch = (url, options) => {
+    const out = realFetch(url, options);
+    fakes.props.set("SYNC_AFTER_EVENT_ID", "3"); // the other run finishes first
+    return out;
+  };
+  syncFromWorker();
+  assert.equal(fakes.sheets.responses, undefined, "nothing written for a page another run already mirrored");
+  assert.equal(fakes.props.get("SYNC_AFTER_EVENT_ID"), "3", "cursor is never moved backwards");
+  assert.deepEqual(
+    fakes.calls.fetches.map((f) => new URL(f.url).searchParams.get("after")),
+    ["0", "3"],
+    "the run continues from the newer cursor instead of stopping"
+  );
 }
 
 // installMaintenanceTriggers manages three triggers, including the minute sync.

@@ -24,8 +24,8 @@
 ## Review Focus
 
 1. A body just over the limit, or with multibyte text, must be refused as `too_large` without being stored. Test in Task 4.
-2. Garbage `after`/`limit` query values (`abc`, `-5`, `1e9`) must fall back to `0` / the default page size, never throw. Test in Task 4.
-3. An export page whose response row has already been deleted by cleanup must still mirror its events and not crash the sync. Test in Task 5.
+2. Garbage `after`/`limit` query values (`abc`, `-5`, `1e9`) must never throw: `after` falls back to `0`, `limit` to the default page size when unparseable and is clamped to the range 1 to 200 otherwise. Test in Task 4.
+3. An export page whose response row has already been deleted by cleanup must not crash the sync. Such a row can only be an expired draft, so the mirror skips its events instead of writing draft answers the Sheet's cleanup could never remove. Test in Task 5.
 4. An exported row whose `raw_json` fails to parse must still be written with its fixed columns and raw text, so one bad row cannot stall the cursor forever. Test in Task 5.
 5. Two events for the same response in one page must leave exactly one current row in the Sheet. Test in Task 5.
 

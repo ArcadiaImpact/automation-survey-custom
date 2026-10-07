@@ -193,7 +193,11 @@ The 48-hour draft promise is kept in both stores with the same rule:
 
 Neither store tells the other about deletions. They converge because they
 apply the same rule to the same `updated_at` values, and a draft that becomes
-active again produces a new event and is mirrored afresh. Submitted rows are
+active again produces a new event and is mirrored afresh. If the mirror falls
+more than 48 hours behind, an export page can contain events whose response
+row the Worker has already deleted. Only an expired draft can be missing in
+that way, since submitted rows are never deleted, so the mirror skips those
+events rather than writing draft answers the Sheet could never clean up. Submitted rows are
 never deleted by either job. The daily submitted-only CSV backup is unchanged.
 D1 additionally keeps 30 days of point-in-time history ("Time Travel"), which
 the privacy wording should treat the way it already treats Google's own

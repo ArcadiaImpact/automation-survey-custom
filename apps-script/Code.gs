@@ -687,10 +687,20 @@ function syncFromWorker() {
     for (let page = 0; page < SYNC_MAX_PAGES; page++) {
       const batch = fetchExportPage_(url, secret, after);
       if (!batch.events.length) break;
-      withLock_(LockService.getScriptLock(), function () {
+      // Minute-triggered runs can overlap during a burst. The cursor is
+      // re-read under the lock: a page another run already mirrored is
+      // skipped, and the cursor never moves backwards.
+      const stored = withLock_(LockService.getScriptLock(), function () {
+        const current = Number(props.getProperty('SYNC_AFTER_EVENT_ID') || 0);
+        if (current >= batch.next_after) return current;
         mirrorBatch_(SpreadsheetApp.getActiveSpreadsheet(), batch);
         props.setProperty('SYNC_AFTER_EVENT_ID', String(batch.next_after));
+        return batch.next_after;
       });
+      if (stored > batch.next_after) {
+        after = stored;
+        continue;
+      }
       after = batch.next_after;
       mirrored += batch.events.length;
       if (batch.events.length < EXPORT_PAGE_SIZE) break;
@@ -718,15 +728,68 @@ function fetchExportPage_(url, secret, after) {
   return batch;
 }
 
+// Writes one export page. Each key column is read once per page and new rows
+// are appended as a single block, so a 200-event page costs a handful of
+// Sheets calls plus one write per response row that already exists.
 function mirrorBatch_(ss, batch) {
-  const store = createSheetStore_(ss);
+  const responseHeaders = analysisColumns_();
+  const eventHeaders = eventColumns_();
+  const responseSheet = getFixedSheet_(ss, RESPONSES_SHEET, responseHeaders);
+  const eventSheet = getFixedSheet_(ss, EVENTS_SHEET, eventHeaders);
+
+  const present = {};
+  const rowById = columnIndex_(responseSheet, responseHeaders, 'response_id');
+  const newResponses = [];
   batch.responses.forEach(function (row) {
-    store.putResponse(mirrorResponseRecord_(row));
+    present[row.response_id] = true;
+    const record = mirrorResponseRecord_(row);
+    if (rowById[row.response_id]) {
+      writeRecord_(responseSheet, responseHeaders, rowById[row.response_id], record);
+    } else {
+      newResponses.push(record);
+    }
   });
+  appendRecords_(responseSheet, responseHeaders, newResponses);
+
+  // An event whose response row is missing from the page belongs to a draft
+  // the Worker has already expired (submitted rows are never deleted), so
+  // it is skipped: the Sheet's cleanup could never remove it otherwise.
+  const seenEvent = columnIndex_(eventSheet, eventHeaders, 'event_key');
+  const newEvents = [];
   batch.events.forEach(function (event) {
+    if (!present[event.response_id]) return;
     const key = eventKey_(event.response_id, event.revision);
-    if (!store.hasEvent(key)) store.appendEvent(mirrorEventRecord_(event));
+    if (seenEvent[key]) return;
+    seenEvent[key] = true;
+    newEvents.push(mirrorEventRecord_(event));
   });
+  appendRecords_(eventSheet, eventHeaders, newEvents);
+}
+
+// value → row number for one key column, read in a single Sheets call.
+function columnIndex_(sheet, headers, keyColumn) {
+  const column = headers.indexOf(keyColumn) + 1;
+  const lastRow = sheet.getLastRow();
+  const index = {};
+  if (!column || lastRow < 2) return index;
+  sheet.getRange(2, column, lastRow - 1, 1).getValues().forEach(function (cells, i) {
+    const value = String(cells[0]);
+    if (value && !index[value]) index[value] = i + 2;
+  });
+  return index;
+}
+
+function appendRecords_(sheet, headers, records) {
+  if (!records.length) return;
+  const values = records.map(function (record) {
+    return headers.map(function (header) {
+      return Object.prototype.hasOwnProperty.call(record, header)
+        ? toCell_(record[header])
+        : '';
+    });
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length)
+    .setValues(values);
 }
 
 // Same columns as buildResponseRecord_, but the timestamps come from the
